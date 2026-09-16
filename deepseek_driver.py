@@ -57,6 +57,16 @@ class DeepSeekDriver(BaseDriver):
         MODEL_TYPE_PICKER_NEW: "new radio picker",
         MODEL_TYPE_PICKER_LEGACY: "legacy inline picker",
     }
+    # Extended model type values to try for "Instant" - website may have changed
+    MODEL_TYPE_INSTANT_VALUES = (
+        DEEPSEEK_MODEL_TYPE_DEFAULT,  # "default"
+        "instant",
+        "instant-v3",
+    )
+    MODEL_TYPE_PICKER_LABELS = {
+        MODEL_TYPE_PICKER_NEW: "new radio picker",
+        MODEL_TYPE_PICKER_LEGACY: "legacy inline picker",
+    }
     FOLLOWUP_REQUEST_HEADER_ALLOWLIST = {
         "accept",
         "accept-language",
@@ -2001,6 +2011,10 @@ class DeepSeekDriver(BaseDriver):
     def _model_type_option_selector(self, picker_kind: str, model_type: str) -> str:
         normalized = str(model_type or "").strip().lower()
         if picker_kind == self.MODEL_TYPE_PICKER_NEW:
+            # For Instant, try multiple possible data-model-type values
+            if normalized in (DEEPSEEK_MODEL_TYPE_DEFAULT, "instant", "instant-v3"):
+                # Create selector that matches any of the possible instant values
+                return "div[role='radiogroup'] div[role='radio'][data-model-type='default'], div[role='radiogroup'] div[role='radio'][data-model-type='instant'], div[role='radiogroup'] div[role='radio'][data-model-type='instant-v3']"
             return f"div[role='radiogroup'] div[role='radio'][data-model-type='{normalized}']"
         return f"div._9f2341b._7ac2123[data-model-type='{normalized}']"
 
@@ -2015,13 +2029,16 @@ class DeepSeekDriver(BaseDriver):
         previous_kind = self._deepseek_model_type_picker_kind
         detected_kind: Optional[str] = None
         for picker_kind in self.MODEL_TYPE_PICKER_ORDER:
+            # Base required types for the picker
             required_types = [
                 DEEPSEEK_MODEL_TYPE_DEFAULT,
                 DEEPSEEK_MODEL_TYPE_EXPERT,
             ]
             if picker_kind == self.MODEL_TYPE_PICKER_NEW:
-                # Vision identifies the new rollout, but IntenseRP only drives Instant/Expert for now
+                # Vision identifies the new rollout; also check for alternative instant values
                 required_types.append("vision")
+                # Also accept alternative instant values that some rollouts might use
+                required_types.extend(["instant", "instant-v3"])
 
             has_all_options = True
             for model_type in required_types:

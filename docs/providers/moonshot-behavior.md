@@ -77,10 +77,11 @@ Selects a specific entry in Kimi's model picker:
 |--------|--------------|
 | **Auto (Thinking toggle)** | No fixed selection - the Enable Thinking toggle decides |
 | **Instant** | Kimi's fast model (currently labeled `Instant`) |
+| **K2.8** | Kimi's K2.8 entry (separate from Instant; tier-gated preview on some accounts) |
 | **Kimi K3** | The K3 flagship |
 | **Kimi K3 Swarm** | The K3 Swarm variant |
 
-An explicit model always wins over the Enable Thinking toggle: when one is selected, IntenseRP makes sure that exact picker entry is active and leaves the Thinking toggle alone. Matching is label-tolerant, so older rollouts that still show `K2.6 Instant` / `K2.6 Thinking` keep working.
+An explicit model always wins over the Enable Thinking toggle: when one is selected, IntenseRP makes sure that exact picker entry is active and leaves the Thinking toggle alone. Matching is label-tolerant, so older rollouts that still show `K2.6 Instant` / `K2.6 Thinking` keep working. `Instant` and `K2.8` are always matched to their own picker entries - K2.8 is never used as a stand-in for Instant.
 
 #### Split API model IDs
 
@@ -89,6 +90,7 @@ With Universal Model Names enabled (Providers in Parallel), Moonshot exposes per
 | API model ID | Picker target | Reasoning |
 |--------------|---------------|-----------|
 | `instant-auto` / `instant-chat` / `instant-reasoner` | Instant | `-reasoner` switches to the Thinking variant |
+| `k2-8-auto` / `k2-8-chat` / `k2-8-reasoner` | K2.8 | `-reasoner` switches to the Thinking variant, K2.8 entry |
 | `kimi-k3-auto` / `kimi-k3-chat` / `kimi-k3-reasoner` | Kimi K3 | `-reasoner` forwards reasoning, `-chat` strips it |
 | `kimi-k3-swarm-auto` / `kimi-k3-swarm-chat` / `kimi-k3-swarm-reasoner` | Kimi K3 Swarm | same as K3 |
 | `moonshot-auto` / `moonshot-chat` / `moonshot-reasoner` | legacy behavior modes | unchanged |
@@ -233,7 +235,7 @@ All macros are stripped before sending.
 | Setting | What It Does | Default |
 |---------|--------------|---------|
 | **Kimi Site Region** | Picks the starting domain (kimi.ai or kimi.com) | International (kimi.ai) |
-| **Model** | Picks a specific model (Instant, Kimi K3, Kimi K3 Swarm) | Auto (Thinking toggle) |
+| **Model** | Picks a specific model (Instant, K2.8, Kimi K3, Kimi K3 Swarm) | Auto (Thinking toggle) |
 | **Request Capture Mode** | Captures responses with Replay or CDP Teeing | Replay |
 | **Enable Thinking** | Switches Kimi mode between Instant and Thinking | Off |
 | **Send Thinking** | Includes reasoning in response | Off |
