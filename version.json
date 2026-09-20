@@ -1,8 +1,8 @@
 {
-  "version": "2.9.2",
+  "version": "2.9.3",
   "aua": true,
   "severity": 3,
   "pu": "discord",
   "pufref": "none",
-  "summary": "Kimi split model IDs (kimi-k3-*), capacity detection for GLM and Kimi, shadow-censorship aware errors"
+  "summary": "Google AI Studio: support for Gemini 3.6 Flash, 3.7 Flash, and 3.8 Flash models"
 }

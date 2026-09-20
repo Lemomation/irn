@@ -189,11 +189,21 @@ def _real_model_id_bases_for_label(
     if not base_id:
         return []
 
-    base_ids = [base_id] if include_base else []
+    raw_label = str(label or "").strip().lower()
+    raw_dot_id = re.sub(r"\s+", "-", raw_label)
+    raw_dot_id = re.sub(r"[^a-z0-9.-]+", "", raw_dot_id).strip("-")
+
+    base_ids = []
+    if include_base:
+        base_ids.append(base_id)
+        if raw_dot_id and raw_dot_id != base_id and raw_dot_id not in base_ids:
+            base_ids.append(raw_dot_id)
+
     if include_provider_prefix and provider is not None:
-        prefixed_id = _with_real_model_api_prefix(provider, base_id)
-        if prefixed_id and prefixed_id not in base_ids:
-            base_ids.append(prefixed_id)
+        for bid in list(base_ids):
+            prefixed_id = _with_real_model_api_prefix(provider, bid)
+            if prefixed_id and prefixed_id not in base_ids:
+                base_ids.append(prefixed_id)
     return base_ids
 
 
@@ -216,6 +226,7 @@ def _real_model_label_map(
         if not label or not base_ids:
             continue
         for base_id in base_ids:
+            label_map.setdefault(base_id, label)
             for suffix, _mode in REAL_MODEL_SUFFIX_MODE_BY_SUFFIX:
                 label_map.setdefault(f"{base_id}{suffix}", label)
     return label_map
@@ -240,6 +251,7 @@ def _real_model_mode_map(
         if not label or not base_ids:
             continue
         for base_id in base_ids:
+            mode_map.setdefault(base_id, MODE_AUTO)
             for suffix, mode in REAL_MODEL_SUFFIX_MODE_BY_SUFFIX:
                 mode_map.setdefault(f"{base_id}{suffix}", mode)
     return mode_map
@@ -423,12 +435,16 @@ def resolve_real_model_label_from_model_id(
     if provider == DriverProvider.AI_STUDIO:
         normalized = _strip_aistudio_override_suffix(normalized)
 
-    return _real_model_label_map(
+    label_map = _real_model_label_map(
         real_model_labels,
         provider=provider,
         include_base=not require_provider_prefix,
         include_provider_prefix=True,
-    ).get(normalized)
+    )
+    res = label_map.get(normalized)
+    if res is None and "." in normalized:
+        res = label_map.get(normalized.replace(".", "-"))
+    return res
 
 
 def get_model_ids_for_provider(

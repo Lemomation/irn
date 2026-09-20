@@ -315,6 +315,12 @@ class AIStudioDriver(BaseDriver):
         flags=re.IGNORECASE,
     )
     LOWEST_LEVEL_BY_MODEL: Dict[str, str] = {
+        "gemini-3.8-flash": "Minimal",
+        "gemini-3.8-flash-preview": "Minimal",
+        "gemini-3.7-flash": "Minimal",
+        "gemini-3.7-flash-preview": "Minimal",
+        "gemini-3.6-flash": "Minimal",
+        "gemini-3.6-flash-preview": "Minimal",
         "gemini-3.5-flash": "Minimal",
         "gemini-3.1-pro-preview": "Low",
         "gemini-3.1-flash-lite": "Minimal",
@@ -326,6 +332,12 @@ class AIStudioDriver(BaseDriver):
         "gemma-4-31b-it": "Minimal",
     }
     THINKING_LEVELS_BY_MODEL: Dict[str, tuple[str, ...]] = {
+        "gemini-3.8-flash": ("Minimal", "Low", "Medium", "High"),
+        "gemini-3.8-flash-preview": ("Minimal", "Low", "Medium", "High"),
+        "gemini-3.7-flash": ("Minimal", "Low", "Medium", "High"),
+        "gemini-3.7-flash-preview": ("Minimal", "Low", "Medium", "High"),
+        "gemini-3.6-flash": ("Minimal", "Low", "Medium", "High"),
+        "gemini-3.6-flash-preview": ("Minimal", "Low", "Medium", "High"),
         "gemini-3.5-flash": ("Minimal", "Low", "Medium", "High"),
         "gemini-3.1-pro-preview": ("Low", "Medium", "High"),
         "gemini-3.1-flash-lite": ("Minimal", "Low", "Medium", "High"),
@@ -364,6 +376,24 @@ class AIStudioDriver(BaseDriver):
         "gemini-2.5-flash-lite": (512, 24576),
     }
     MODEL_CONFIGS: Dict[str, Dict[str, Any]] = {
+        "Gemini 3.8 Flash": {
+            "base_id": "gemini-3.8-flash",
+            "selector_id": "model-carousel-row-models/gemini-3.8-flash",
+            "supports_temperature": False,
+            "supports_top_p": False,
+        },
+        "Gemini 3.7 Flash": {
+            "base_id": "gemini-3.7-flash",
+            "selector_id": "model-carousel-row-models/gemini-3.7-flash",
+            "supports_temperature": False,
+            "supports_top_p": False,
+        },
+        "Gemini 3.6 Flash": {
+            "base_id": "gemini-3.6-flash",
+            "selector_id": "model-carousel-row-models/gemini-3.6-flash",
+            "supports_temperature": False,
+            "supports_top_p": False,
+        },
         "Gemini 3.5 Flash": {
             "base_id": "gemini-3.5-flash",
             "selector_id": "model-carousel-row-models/gemini-3.5-flash",
@@ -1427,6 +1457,19 @@ class AIStudioDriver(BaseDriver):
             model,
             self.api_real_model_labels(),
         )
+        if not override and model:
+            raw = str(model).strip()
+            if raw in self.MODEL_CONFIGS:
+                override = raw
+            else:
+                canon = self._canonicalize_text(raw)
+                for label, cfg in self.MODEL_CONFIGS.items():
+                    if canon in (
+                        self._canonicalize_text(label),
+                        self._canonicalize_text(cfg.get("base_id") or ""),
+                    ):
+                        override = label
+                        break
         override_label = str(model_label_override or override or "").strip()
         return override_label if override_label in self.MODEL_CONFIGS else configured_label
 
@@ -1576,12 +1619,25 @@ class AIStudioDriver(BaseDriver):
         if not current:
             return False
 
+        base_id = str(model_config.get("base_id") or "").strip()
+        selector_tail = str(model_config.get("selector_id") or "").rsplit("/", 1)[-1]
         candidates = [
             desired_label,
-            str(model_config.get("base_id") or ""),
-            str(model_config.get("selector_id") or "").rsplit("/", 1)[-1],
+            base_id,
+            selector_tail,
         ]
-        return any(current == cls._canonicalize_text(candidate) for candidate in candidates if candidate)
+        if base_id:
+            candidates.extend([f"{base_id}-preview", f"{base_id}preview"])
+        if desired_label:
+            candidates.extend([f"{desired_label} Preview", f"{desired_label}Preview"])
+
+        for candidate in candidates:
+            if not candidate:
+                continue
+            cand_canon = cls._canonicalize_text(candidate)
+            if current == cand_canon or cand_canon in current or current in cand_canon:
+                return True
+        return False
 
     async def _read_current_model_id(self) -> str:
         """Read the currently selected model label from the model selector card."""
@@ -1682,34 +1738,62 @@ class AIStudioDriver(BaseDriver):
             await asyncio.sleep(0.2)
         return bool(clicked)
 
-    async def _click_model_option(self, selector_id: str) -> bool:
-        """Click a visible model option by its picker button id."""
+    async def _click_model_option(
+        self,
+        selector_id: str,
+        base_id: str = "",
+        label: str = "",
+    ) -> bool:
+        """Click a visible model option by its picker button id or text."""
         if not self.page:
             return False
 
-        target = self.page.locator(f"div.model-options-container button[id='{selector_id}']")
-        if await target.count() == 0:
-            target = self.page.locator(f"button[id='{selector_id}']")
+        targets = [
+            f"div.model-options-container button[id='{selector_id}']",
+            f"button[id='{selector_id}']",
+        ]
+        if base_id:
+            targets.extend([
+                f"div.model-options-container button[id*='{base_id}']",
+                f"button[id*='{base_id}']",
+            ])
 
-        count = 0
-        try:
-            count = await target.count()
-        except Exception:
+        for sel in targets:
+            target = self.page.locator(sel)
             count = 0
-
-        for idx in range(min(count, 8)):
-            candidate = target.nth(idx)
             try:
-                if not await candidate.is_visible():
+                count = await target.count()
+            except Exception:
+                count = 0
+
+            for idx in range(min(count, 8)):
+                candidate = target.nth(idx)
+                try:
+                    if not await candidate.is_visible():
+                        continue
+                except Exception:
+                    pass
+
+                try:
+                    await self._click_locator(candidate, timeout=3000)
+                    return True
+                except Exception:
                     continue
+
+        if label:
+            canon_label = self._canonicalize_text(label)
+            try:
+                container = self.page.locator("div.model-options-container button")
+                btn_count = await container.count()
+                for idx in range(min(btn_count, 30)):
+                    btn = container.nth(idx)
+                    if await btn.is_visible():
+                        txt = self._canonicalize_text(await btn.inner_text())
+                        if canon_label in txt or txt in canon_label:
+                            await self._click_locator(btn, timeout=3000)
+                            return True
             except Exception:
                 pass
-
-            try:
-                await self._click_locator(candidate, timeout=3000)
-                return True
-            except Exception:
-                continue
 
         return False
 
@@ -1729,7 +1813,7 @@ class AIStudioDriver(BaseDriver):
             return
 
         await self._click_model_family_filter()
-        if not await self._click_model_option(desired_selector):
+        if not await self._click_model_option(desired_selector, desired_base, desired_label):
             Logger.warning(
                 f"Google AI Studio: target model '{desired_label}' was not found in the picker."
             )
