@@ -1,8 +1,8 @@
 {
-  "version": "2.9.3",
+  "version": "2.9.4",
   "aua": true,
   "severity": 3,
   "pu": "discord",
   "pufref": "none",
-  "summary": "Google AI Studio: support for Gemini 3.6 Flash, 3.7 Flash, and 3.8 Flash models"
+  "summary": "Google AI Studio: fix thinking level baseline and dropdown fallback for Gemini 3.6, 3.7, and 3.8 Flash"
 }

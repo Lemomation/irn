@@ -315,12 +315,12 @@ class AIStudioDriver(BaseDriver):
         flags=re.IGNORECASE,
     )
     LOWEST_LEVEL_BY_MODEL: Dict[str, str] = {
-        "gemini-3.8-flash": "Minimal",
-        "gemini-3.8-flash-preview": "Minimal",
-        "gemini-3.7-flash": "Minimal",
-        "gemini-3.7-flash-preview": "Minimal",
-        "gemini-3.6-flash": "Minimal",
-        "gemini-3.6-flash-preview": "Minimal",
+        "gemini-3.8-flash": "Low",
+        "gemini-3.8-flash-preview": "Low",
+        "gemini-3.7-flash": "Low",
+        "gemini-3.7-flash-preview": "Low",
+        "gemini-3.6-flash": "Low",
+        "gemini-3.6-flash-preview": "Low",
         "gemini-3.5-flash": "Minimal",
         "gemini-3.1-pro-preview": "Low",
         "gemini-3.1-flash-lite": "Minimal",
@@ -332,12 +332,12 @@ class AIStudioDriver(BaseDriver):
         "gemma-4-31b-it": "Minimal",
     }
     THINKING_LEVELS_BY_MODEL: Dict[str, tuple[str, ...]] = {
-        "gemini-3.8-flash": ("Minimal", "Low", "Medium", "High"),
-        "gemini-3.8-flash-preview": ("Minimal", "Low", "Medium", "High"),
-        "gemini-3.7-flash": ("Minimal", "Low", "Medium", "High"),
-        "gemini-3.7-flash-preview": ("Minimal", "Low", "Medium", "High"),
-        "gemini-3.6-flash": ("Minimal", "Low", "Medium", "High"),
-        "gemini-3.6-flash-preview": ("Minimal", "Low", "Medium", "High"),
+        "gemini-3.8-flash": ("Low", "Medium", "High"),
+        "gemini-3.8-flash-preview": ("Low", "Medium", "High"),
+        "gemini-3.7-flash": ("Low", "Medium", "High"),
+        "gemini-3.7-flash-preview": ("Low", "Medium", "High"),
+        "gemini-3.6-flash": ("Low", "Medium", "High"),
+        "gemini-3.6-flash-preview": ("Low", "Medium", "High"),
         "gemini-3.5-flash": ("Minimal", "Low", "Medium", "High"),
         "gemini-3.1-pro-preview": ("Low", "Medium", "High"),
         "gemini-3.1-flash-lite": ("Minimal", "Low", "Medium", "High"),
@@ -3166,13 +3166,61 @@ class AIStudioDriver(BaseDriver):
         if ok:
             self._safety_filters_initialized = True
 
+    async def _read_current_thinking_level(self) -> str:
+        """Read the currently displayed thinking level text from the trigger, if visible."""
+        if not self.page:
+            return ""
+        selectors = [
+            "mat-select[aria-label*='hinking'] .mat-mdc-select-value-text",
+            "mat-select[aria-label*='hinking'] .mat-mdc-select-min-line",
+            "mat-select[aria-label*='hinking'] span",
+            ".mat-mdc-form-field:has-text('Thinking') .mat-mdc-select-value-text",
+            ".mat-mdc-form-field:has-text('Thinking') .mat-mdc-select-min-line",
+            "mat-form-field:has-text('Thinking') .mat-mdc-select-value-text",
+            "mat-form-field:has-text('Thinking') [role='combobox']",
+        ]
+        for sel in selectors:
+            try:
+                loc = self.page.locator(sel)
+                if await loc.count() > 0 and await loc.first.is_visible():
+                    txt = str(await loc.first.inner_text() or "").strip()
+                    norm = self._normalize_thinking_level(txt)
+                    if norm:
+                        return norm
+            except Exception:
+                continue
+        return ""
+
     async def _open_thinking_level_dropdown(self) -> bool:
         """Find and open the thinking-level dropdown despite AI Studio layout variance."""
         if not self.page:
             return False
 
         await self._dismiss_transient_overlays()
-        fields = self.page.locator(self.THINKING_FORM_FIELD_SELECTOR)
+
+        # Try direct selectors first
+        direct_selectors = [
+            "mat-select[aria-label='Thinking Level']",
+            "mat-select[aria-label='Thinking Effort']",
+            "mat-select[aria-label*='hinking']",
+            "[data-test-id*='thinking'] mat-select",
+            "[data-test-id*='thinking'] [role='combobox']",
+        ]
+        for sel in direct_selectors:
+            try:
+                loc = self.page.locator(sel)
+                if await loc.count() > 0 and await loc.first.is_visible():
+                    await self._click_locator(loc.first, timeout=3000)
+                    await self._ui_settle_pause(0.18)
+                    try:
+                        await self.page.wait_for_selector(self.THINKING_LISTBOX_SELECTOR, timeout=5000, state="visible")
+                        return True
+                    except Exception:
+                        pass
+            except Exception:
+                continue
+
+        fields = self.page.locator(".mat-mdc-form-field, mat-form-field")
         count = 0
         try:
             count = await fields.count()
@@ -3180,7 +3228,7 @@ class AIStudioDriver(BaseDriver):
             count = 0
 
         visible_items = []
-        for idx in range(min(count, 8)):
+        for idx in range(min(count, 12)):
             item = fields.nth(idx)
             try:
                 if await item.is_visible():
@@ -3188,16 +3236,16 @@ class AIStudioDriver(BaseDriver):
             except Exception:
                 continue
 
-        if len(visible_items) < 2:
+        if not visible_items:
             return False
 
         target = None
         for item in visible_items:
             try:
                 for label in self.THINKING_SELECT_LABELS:
-                    thinking_select = item.locator(f"mat-select[aria-label='{label}']")
+                    thinking_select = item.locator(f"mat-select[aria-label='{label}'], mat-select[aria-label*='{label}']")
                     if await thinking_select.count() > 0:
-                        target = item
+                        target = thinking_select.first
                         break
                 if target is not None:
                     break
@@ -3246,9 +3294,9 @@ class AIStudioDriver(BaseDriver):
 
         try:
             await self.page.wait_for_selector(self.THINKING_LISTBOX_SELECTOR, timeout=5000, state="visible")
+            return True
         except Exception:
             return False
-        return True
 
     async def _select_thinking_level(self, level: str) -> bool:
         """Select a normalized thinking level from the thinking dropdown."""
@@ -3257,6 +3305,11 @@ class AIStudioDriver(BaseDriver):
             return False
         if not self.page:
             return False
+
+        # If already set to the desired level, skip opening the dropdown
+        current = await self._read_current_thinking_level()
+        if current and current == wanted:
+            return True
 
         if not await self._open_thinking_level_dropdown():
             return False
@@ -3268,28 +3321,51 @@ class AIStudioDriver(BaseDriver):
         except Exception:
             count = 0
 
-        for idx in range(min(count, 8)):
+        available: list[tuple[str, Any]] = []
+        for idx in range(min(count, 12)):
             candidate = options.nth(idx)
             try:
                 if not await candidate.is_visible():
                     continue
-            except Exception:
-                continue
-
-            try:
                 text = str(await candidate.inner_text() or "").strip()
+                norm = self._normalize_thinking_level(text)
+                if norm:
+                    available.append((norm, candidate))
             except Exception:
-                text = ""
-            if self._normalize_thinking_level(text) != wanted:
                 continue
 
+        if not available:
             try:
-                await self._click_locator(candidate, timeout=3000)
+                await self.page.keyboard.press("Escape")
+            except Exception:
+                pass
+            return False
+
+        # Try exact match first
+        target_cand = next((cand for norm, cand in available if norm == wanted), None)
+
+        # Fallback to closest available option if wanted is not present
+        if target_cand is None:
+            supported_available = tuple(norm for norm, _ in available)
+            closest_norm = self._closest_supported_thinking_level(wanted, supported_available)
+            target_cand = next((cand for norm, cand in available if norm == closest_norm), None)
+            if target_cand:
+                Logger.info(
+                    f"Google AI Studio: thinking level '{wanted}' not in dropdown {supported_available}; selecting closest '{closest_norm}'."
+                )
+
+        if target_cand is not None:
+            try:
+                await self._click_locator(target_cand, timeout=3000)
                 await self._ui_settle_pause(0.18)
                 return True
             except Exception:
-                continue
+                pass
 
+        try:
+            await self.page.keyboard.press("Escape")
+        except Exception:
+            pass
         return False
 
     async def _apply_thinking_budget_level(self, model_base: str, level: str) -> bool:
