@@ -330,29 +330,12 @@ class QwenLMDriver(BaseDriver):
     MODEL_SELECTOR_POPUP_SELECTOR = "div[class*='model-selector-popup']"
 
     MODEL_LABELS: List[str] = [
-        "Qwen3.6-Plus",
+        "Qwen3.8-Max",
+        "Qwen3.8-Omni-Flash",
+        "Qwen3.7-Plus",
         "Qwen3.7-Max",
-        "Qwen3.6-Max-Preview",
-        "Qwen3.6-27B",
-        "Qwen3.7-Max-Preview",
-        "Qwen3.7-Plus-Preview",
+        "Qwen3.6-Plus",
         "Qwen3.5-Plus",
-        "Qwen3.5-Omni-Plus",
-        "Qwen3.6-35B-A3B",
-        "Qwen3.5-Flash",
-        "Qwen3.5-Max-Preview",
-        "Qwen3.6-Plus-Preview",
-        "Qwen3.5-397B-A17B",
-        "Qwen3.5-122B-A10B",
-        "Qwen3.5-Omni-Flash",
-        "Qwen3.5-27B",
-        "Qwen3.5-35B-A3B",
-        "Qwen3-Max",
-        "Qwen3-235B-A22B-2507",
-        "Qwen3-Coder",
-        "Qwen3-VL-235B-A22B",
-        "Qwen3-Omni-Flash",
-        "Qwen2.5-Max",
     ]
 
     def __init__(self, config_manager):
@@ -1356,7 +1339,7 @@ class QwenLMDriver(BaseDriver):
         if not wanted:
             return False
 
-        popup_sel = self.MODEL_SELECTOR_POPUP_SELECTOR
+        popup_sel = f"{self.MODEL_SELECTOR_POPUP_SELECTOR}, div.ant-dropdown, div[class*='ant-dropdown-menu'], div[class*='model-selector']"
         item_sel = "div[class*='model-item___']"
         name_span_sel = "div[class*='model-item-name'] span"
 
@@ -1436,21 +1419,20 @@ class QwenLMDriver(BaseDriver):
                 "  };"
                 "  const popups = Array.from(document.querySelectorAll(popupSel)).filter(isVisible);"
                 "  if (!popups.length) return false;"
-                "  const popup = popups[0];"
-                "  const triggerText = 'expand more models';"
-                "  const candidates = Array.from(popup.querySelectorAll(\"span.ant-dropdown-trigger, div[class*='view-more']\"));"
-                "  for (const el of candidates) {"
-                "    const t = norm(el.textContent || '');"
-                "    if (!t.includes(triggerText)) continue;"
-                "    const target = el;"
-                "    try { target.dispatchEvent(new MouseEvent('mouseenter', {bubbles:true})); } catch (e) {}"
-                "    try { target.dispatchEvent(new MouseEvent('mouseover', {bubbles:true})); } catch (e) {}"
-                "    try { target.click(); } catch (e) {}"
-                "    return true;"
+                "  for (const popup of popups) {"
+                "    const candidates = Array.from(popup.querySelectorAll(\"span.ant-dropdown-trigger, div[class*='view-more'], [class*='more'], div, span, li, button\"));"
+                "    for (const el of candidates) {"
+                "      const t = norm(el.textContent || '');"
+                "      if (!t.includes('expand more models') && !t.includes('more models')) continue;"
+                "      try { el.dispatchEvent(new MouseEvent('mouseenter', {bubbles:true})); } catch (e) {}"
+                "      try { el.dispatchEvent(new MouseEvent('mouseover', {bubbles:true})); } catch (e) {}"
+                "      try { el.click(); } catch (e) {}"
+                "      return true;"
+                "    }"
                 "  }"
                 "  return false;"
                 "}",
-                self.MODEL_SELECTOR_POPUP_SELECTOR,
+                popup_sel,
             )
         except Exception:
             revealed = False

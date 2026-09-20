@@ -4,5 +4,5 @@
   "severity": 3,
   "pu": "discord",
   "pufref": "none",
-  "summary": "Google AI Studio: Gemini 3.6/3.7/3.8 Flash support & thinking fix; Upstream: Kimi K2.8, DeepSeek radio picker, GLM modal fix"
+  "summary": "Google AI Studio: Gemini 3.6/3.7/3.8 Flash; QwenLM: add Qwen 3.8 series & clean up model list; Upstream: Kimi K2.8, DeepSeek radio, GLM fix"
 }
