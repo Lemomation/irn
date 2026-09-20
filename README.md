@@ -1,3 +1,4 @@
+This is just a continuation of original IntenseRP Next, Credits to everyone who worked on it!
 <p align="center">
   <img src=".github/images/logo-strip.png" alt="IntenseRP Next" />
 </p>
