@@ -126,10 +126,13 @@ class MoonshotDriver(BaseDriver):
 
     MODEL_INSTANT = "Instant"
     MODEL_THINKING = "K2.6 Thinking"
+    MODEL_K28 = "K2.8"
     MODEL_K3 = "Kimi K3"
     MODEL_K3_SWARM = "Kimi K3 Swarm"
     # Picker labels change between Kimi rollouts ("K2.6 Instant" -> "Instant"),
     # so each known model maps to accepted normalized-name aliases.
+    # "Instant" and "K2.8" are separate picker entries: K2.8 must select the
+    # K2.8 entry, not be treated as a stand-in for Instant.
     MODEL_MATCH_ALIASES = {
         "instant": ("instant",),
         "k2.6 instant": ("instant",),
@@ -137,6 +140,9 @@ class MoonshotDriver(BaseDriver):
         "thinking": ("thinking",),
         "k2.6 thinking": ("thinking",),
         "kimi thinking": ("thinking",),
+        "k2.8": ("k2.8", "k2.8 preview", "kimi k2.8"),
+        "k2.8 preview": ("k2.8", "k2.8 preview", "kimi k2.8"),
+        "kimi k2.8": ("k2.8", "k2.8 preview", "kimi k2.8"),
         "kimi k3": ("kimi k3", "k3"),
         "k3": ("k3",),
         "kimi k3 swarm": ("kimi k3 swarm", "k3 swarm"),
@@ -1432,7 +1438,7 @@ class MoonshotDriver(BaseDriver):
         self._mark_active_ece_pair_used()
 
     def api_real_model_labels(self) -> list[str]:
-        return [self.MODEL_INSTANT, self.MODEL_K3, self.MODEL_K3_SWARM]
+        return [self.MODEL_INSTANT, self.MODEL_K28, self.MODEL_K3, self.MODEL_K3_SWARM]
 
     def _get_moonshot_model_label_for_request(self, model: Any = None) -> str:
         """Resolve a picker label from an API model ID (e.g. kimi-k3-reasoner)."""

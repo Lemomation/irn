@@ -85,6 +85,7 @@ MOONSHOT_MODEL_AUTO_LABEL = "Auto (Thinking toggle)"
 MOONSHOT_MODEL_OPTIONS = [
     MOONSHOT_MODEL_AUTO_LABEL,
     "Instant",
+    "K2.8",
     "Kimi K3",
     "Kimi K3 Swarm",
 ]
@@ -523,7 +524,7 @@ SCHEMA = [
                 label="Model",
                 type=SettingType.DROPDOWN,
                 default="GLM-5.3",
-                options=["GLM-5.3", "GLM-5.2", "GLM-5.1", "GLM-5-Turbo", "GLM-5V-Turbo", "GLM-4.7"],
+                options=["GLM-5.3-Flash", "GLM-5.3", "GLM-5.2", "GLM-5.1", "GLM-5-Turbo", "GLM-5V-Turbo", "GLM-4.7"],
                 tooltip="Select which GLM model to use in the web UI. Not related to the API model IDs.",
                 docs_path=DOCS_GLM,
                 docs_anchor="modes-model-ids",

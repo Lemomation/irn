@@ -127,6 +127,7 @@ class GLMDriver(BaseDriver):
     MODEL_DROPDOWN_SELECTOR = f"div#{MODEL_DROPDOWN_ID}"
     MODEL_OPTION_SELECTOR = "button[aria-label='model-item'][data-value], div[role='menu'] button[data-value]"
     MODEL_DATA_VALUE_BY_FRIENDLY: Dict[str, str] = {
+        "GLM-5.3-Flash": "glm-5.3-flash",
         "GLM-5.3": "glm-5.3",
         "GLM-5.2": "glm-5.2",
         "GLM-5.1": "GLM-5.1",
@@ -487,6 +488,9 @@ class GLMDriver(BaseDriver):
         if not self.page:
             return 0
 
+        total_clicked = 0
+
+        # 1. Original: buttons with data-dialog-close
         try:
             clicked = await self.page.evaluate(
                 """() => {
@@ -517,18 +521,79 @@ class GLMDriver(BaseDriver):
                     return clicked;
                 }"""
             )
+            total_clicked = int(clicked or 0)
         except Exception as e:
             Logger.debug(f"{context}: failed to dismiss data-dialog-close buttons: {e}")
-            return 0
 
+        # 2. Handle modal overlays with data-dialog-overlay (dismiss by pressing Escape)
         try:
-            clicked_count = int(clicked or 0)
-        except Exception:
-            clicked_count = 0
-        if clicked_count:
-            Logger.debug(f"{context}: dismissed {clicked_count} startup dialog close button(s).")
+            await self.page.evaluate(
+                """() => {
+                    const overlays = document.querySelectorAll('[data-dialog-overlay][data-state="open"]');
+                    for (const overlay of overlays) {
+                        // Try pressing Escape to close
+                        const event = new KeyboardEvent('keydown', { key: 'Escape', bubbles: true });
+                        document.dispatchEvent(event);
+                    }
+                }"""
+            )
+        except Exception as e:
+            Logger.debug(f"{context}: failed to dismiss dialog overlays via Escape: {e}")
+
+        # 3. Handle modal overlays with close buttons that don't have data-dialog-close
+        # Try to find and click close buttons in modal overlays
+        try:
+            clicked = await self.page.evaluate(
+                """() => {
+                    const isVisible = (element) => {
+                        if (!element) return false;
+                        const style = window.getComputedStyle(element);
+                        const rect = element.getBoundingClientRect();
+                        return (
+                            style.display !== 'none' &&
+                            style.visibility !== 'hidden' &&
+                            rect.width > 0 &&
+                            rect.height > 0
+                        );
+                    };
+
+                    let clicked = 0;
+                    // Try to find close buttons in modal overlays
+                    const selectors = [
+                        'div[role="dialog"] button[aria-label*="close" i]',
+                        'div[role="dialog"] button[aria-label*="dismiss" i]',
+                        'div[data-dialog-overlay] button[aria-label*="close" i]',
+                        'div[data-dialog-overlay] button[aria-label*="dismiss" i]',
+                        'div._modal-overlay button[aria-label*="close" i]',
+                        'div._modal-overlay button[aria-label*="dismiss" i]',
+                        'div[class*="modal-overlay"] button[aria-label*="close" i]',
+                        'div[class*="modal-overlay"] button[aria-label*="dismiss" i]',
+                    ];
+                    let clicked = 0;
+                    for (const selector of selectors) {
+                        for (const button of document.querySelectorAll(selector)) {
+                            if (button.disabled || !isVisible(button)) {
+                                continue;
+                            }
+                            try {
+                                button.click();
+                                clicked += 1;
+                            } catch (e) {
+                                // Ignore
+                            }
+                        }
+                    }
+                    return clicked;
+                }"""
+            )
+            total_clicked += int(clicked or 0)
+        except Exception as e:
+            Logger.debug(f"{context}: failed to dismiss modal close buttons: {e}")
+
+        if total_clicked:
+            Logger.debug(f"{context}: dismissed {total_clicked} dialog/modal close button(s).")
             await asyncio.sleep(0.1)
-        return clicked_count
+        return total_clicked
 
     async def _read_glm_pointer_events_state(self) -> dict[str, Any]:
         """Return whether GLM's app shell is currently accepting pointer events."""
@@ -1907,6 +1972,20 @@ class GLMDriver(BaseDriver):
             return
 
         await self._dismiss_dialog_close_buttons()
+
+        # Also dismiss any modal overlays that might intercept clicks
+        try:
+            await self.page.evaluate(
+                """() => {
+                    const overlays = document.querySelectorAll('[data-dialog-overlay][data-state="open"]');
+                    for (const overlay of overlays) {
+                        const event = new KeyboardEvent('keydown', { key: 'Escape', bubbles: true });
+                        document.dispatchEvent(event);
+                    }
+                }"""
+            )
+        except Exception as e:
+            Logger.debug(f"GLM Chat: failed to dismiss modal overlays via Escape: {e}")
 
         sidebar = self.page.locator("#sidebar")
         is_open = False

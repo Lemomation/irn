@@ -1,8 +1,8 @@
 {
-  "version": "2.9.4",
+  "version": "2.9.5",
   "aua": true,
   "severity": 3,
   "pu": "discord",
   "pufref": "none",
-  "summary": "Google AI Studio: fix thinking level baseline and dropdown fallback for Gemini 3.6, 3.7, and 3.8 Flash"
+  "summary": "Google AI Studio: Gemini 3.6/3.7/3.8 Flash support & thinking fix; Upstream: Kimi K2.8, DeepSeek radio picker, GLM modal fix"
 }
