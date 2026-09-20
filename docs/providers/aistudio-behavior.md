@@ -282,7 +282,7 @@ Google AI Studio is currently the only provider in IntenseRP that applies these 
 
 You can set defaults in Settings, and request-level API values still win when provided.
 
-Some models don't expose every sampling field. For example, `Gemini 3.5 Flash` and `Gemini 3.1 Flash Lite` currently have no Temperature or Top P inputs, so IntenseRP skips those controls for those models and still applies Max Output Tokens.
+Some models don't expose every sampling field. For example, `Gemini 3.8 Flash`, `Gemini 3.7 Flash`, `Gemini 3.6 Flash`, `Gemini 3.5 Flash`, and `Gemini 3.1 Flash Lite` currently have no Temperature or Top P inputs, so IntenseRP skips those controls for those models and still applies Max Output Tokens.
 
 ### Temperature
 
