@@ -58,7 +58,9 @@ class GLMDriver(BaseDriver):
     COMPLETION_ROUTE_GLOB = "**/api/**/chat/completions**"
     COMPLETION_URL_PATHS = {"/api/chat/completions", "/api/v2/chat/completions"}
     MODEL_CONCURRENCY_LIMIT_CODE = "MODEL_CONCURRENCY_LIMIT"
-    DEEPTHINK_EFFORT_MODEL_FRIENDLIES: frozenset[str] = frozenset({"GLM-5.2", "GLM-5.3"})
+    DEEPTHINK_EFFORT_MODEL_FRIENDLIES: frozenset[str] = frozenset(
+        {"GLM-5.2", "GLM-5.3", "GLM-5.3-Flash"}
+    )
     TOOLS_SUPPORTED_MODEL_FRIENDLY = "GLM-5V-Turbo"
     DEFAULT_GLM_52_DEEPTHINK_EFFORT = "max"
     MODEL_CAPACITY_TEXT_MARKERS = (
@@ -461,7 +463,9 @@ class GLMDriver(BaseDriver):
             return "max"
         if normalized in {"high", "medium", "med"}:
             return "high"
-        return fallback if fallback in {"high", "max"} else cls.DEFAULT_GLM_52_DEEPTHINK_EFFORT
+        if normalized in {"low", "min", "minimum"}:
+            return "low"
+        return fallback if fallback in {"low", "high", "max"} else cls.DEFAULT_GLM_52_DEEPTHINK_EFFORT
 
     def _get_request_capture_mode(self) -> str:
         try:
@@ -2357,6 +2361,8 @@ class GLMDriver(BaseDriver):
                 effort = "high"
             elif "max" in normalized:
                 effort = "max"
+            elif "low" in normalized:
+                effort = "low"
 
         return {
             "exists": True,
@@ -2470,12 +2476,24 @@ class GLMDriver(BaseDriver):
             return False
 
         desired = self._normalize_glm_deepthink_effort(effort)
-        label = "Max" if desired == "max" else "High"
+        if desired == "max":
+            label = "Max"
+        elif desired == "low":
+            label = "Low"
+        else:
+            label = "High"
+
         menu = self.page.locator("div[role='menu'][data-state='open']")
         option = menu.locator("button[type='button'][data-selected]").filter(has_text=label)
         count = await option.count()
+        if count == 0 and label == "Low":
+            Logger.info("GLM Chat: 'Low' effort option not found in menu, falling back to 'High'.")
+            label = "High"
+            option = menu.locator("button[type='button'][data-selected]").filter(has_text=label)
+            count = await option.count()
+
         if count == 0:
-            Logger.warning(f"GLM Chat: GLM-5.2 Deep Think effort option '{label}' not found.")
+            Logger.warning(f"GLM Chat: GLM Deep Think effort option '{label}' not found.")
             return False
 
         for idx in range(min(count, 5)):

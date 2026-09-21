@@ -1116,13 +1116,31 @@ class API:
             return "high"
         return effort
 
-    @staticmethod
-    def _glm_deepthink_effort_for_reasoning_effort(effort: str) -> str:
-        if effort in REASONING_EFFORT_DISABLED_VALUES:
+    GLM_REASONING_EFFORT_DISABLED_VALUES = {
+        "",
+        "auto",
+        "none",
+        "off",
+        "false",
+        "0",
+        "no",
+        "disable",
+        "disabled",
+    }
+
+    @classmethod
+    def _glm_deepthink_effort_for_reasoning_effort(cls, effort: str) -> str:
+        if effort in cls.GLM_REASONING_EFFORT_DISABLED_VALUES:
             return ""
         if effort in {"max", "maximum", "xhigh", "x-high", "extra-high", "extra-highest"}:
             return "max"
+        if effort in {"low", "min", "minimum", "minimal"}:
+            return "low"
         return "high"
+
+    @classmethod
+    def _glm_reasoning_effort_enables_reasoning(cls, effort: str) -> bool:
+        return bool(cls._glm_deepthink_effort_for_reasoning_effort(effort))
 
     @classmethod
     def _huggingchat_reasoning_effort_enables_reasoning(cls, effort: str) -> bool:
@@ -1146,6 +1164,14 @@ class API:
                 return self._replace_behavior_suffix(base_model, MODE_CHAT)
             reasoner_model = self._replace_behavior_suffix(base_model, MODE_REASONER)
             return f"{reasoner_model}-{level}" if reasoner_model else reasoner_model
+
+        if provider == DriverProvider.GLM_CHAT:
+            mode = (
+                MODE_REASONER
+                if self._glm_reasoning_effort_enables_reasoning(effort)
+                else MODE_CHAT
+            )
+            return self._replace_behavior_suffix(requested_model, mode)
 
         if provider == DriverProvider.HUGGINGCHAT:
             mode = (

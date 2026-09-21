@@ -35,7 +35,7 @@ from config.schema import (
 )
 from drivers.providers import DriverProvider, provider_options
 from ui.core.brand import BrandColors
-from ui.widgets.components import Tumbler, StyledLineEdit, StyledTextEdit, StyledComboBox, Divider, Description, HintCard, StyledButton, MultiColumnRow, SettingRow, ToggleRow, InputPairsWidget, InputListWidget, DirectoryEntry, SegmentedSwitcher
+from ui.widgets.components import Tumbler, StyledLineEdit, StyledTextEdit, StyledComboBox, Divider, Description, HintCard, StyledButton, MultiColumnRow, SettingRow, ToggleRow, InputPairsWidget, InputListWidget, DirectoryEntry, SegmentedSwitcher, configure_deprecated_combobox_items
 from ui.widgets.marshmallow_dropdown import MarshmallowDropdown, MarshmallowMultiSelectDropdown, MarshmallowOption
 from ui.widgets.redirect_card import RedirectCard
 from ui.widgets.runtime_parallelization import RuntimeProviderLaneDropdown
@@ -1308,6 +1308,10 @@ class SettingsWindow(QMainWindow):
             widget.clear()
             for option in options:
                 widget.addItem(str(option))
+            deprecated_opts = getattr(field, "deprecated_options", None)
+            if deprecated_opts:
+                tooltip = getattr(field, "deprecated_tooltip", "Model has been retired") or "Model has been retired"
+                configure_deprecated_combobox_items(widget, deprecated_opts, tooltip=tooltip)
             if current_text and widget.findText(current_text) >= 0:
                 widget.setCurrentText(current_text)
             elif saved_value and widget.findText(saved_value) >= 0:
@@ -1363,6 +1367,10 @@ class SettingsWindow(QMainWindow):
             if dropdown_options:
                 for option in dropdown_options:
                     widget.addItem(str(option))
+            deprecated_opts = getattr(field, "deprecated_options", None)
+            if deprecated_opts:
+                tooltip = getattr(field, "deprecated_tooltip", "Model has been retired") or "Model has been retired"
+                configure_deprecated_combobox_items(widget, deprecated_opts, tooltip=tooltip)
             if not getattr(field, "transient", False):
                 widget.currentTextChanged.connect(self._on_setting_changed)
 

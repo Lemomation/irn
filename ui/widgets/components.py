@@ -1,8 +1,8 @@
 from dataclasses import dataclass
 from typing import Any
 
-from PySide6.QtWidgets import QCheckBox, QWidget, QHBoxLayout, QVBoxLayout, QLabel, QLineEdit, QTextEdit, QComboBox, QFrame, QPushButton, QSizePolicy, QFileDialog, QStyle, QStyleOptionComboBox, QToolButton
-from PySide6.QtCore import Property, QSize, Qt, QRectF, Signal, QEvent, QPropertyAnimation, QEasingCurve, QAbstractAnimation, QParallelAnimationGroup
+from PySide6.QtWidgets import QCheckBox, QWidget, QHBoxLayout, QVBoxLayout, QLabel, QLineEdit, QTextEdit, QComboBox, QFrame, QPushButton, QSizePolicy, QFileDialog, QStyle, QStyleOptionComboBox, QToolButton, QStyledItemDelegate, QStyleOptionViewItem
+from PySide6.QtCore import Property, QSize, Qt, QRectF, Signal, QEvent, QPropertyAnimation, QEasingCurve, QAbstractAnimation, QParallelAnimationGroup, QRect
 import html
 import os
 from pathlib import Path
@@ -286,6 +286,10 @@ class StyledComboBox(QComboBox):
                 border: 1px solid {BrandColors.INPUT_BORDER};
                 outline: none;
             }}
+            QComboBox QAbstractItemView::item:disabled {{
+                color: {BrandColors.TEXT_DISABLED};
+                background-color: transparent;
+            }}
         """)
     
     def wheelEvent(self, event):
@@ -326,6 +330,129 @@ class StyledComboBox(QComboBox):
         painter.setRenderHint(QPainter.SmoothPixmapTransform, True)
         painter.drawPixmap(int(round(x)), int(round(y)), pixmap)
         painter.end()
+
+
+DEPRECATED_ITEM_ROLE = Qt.ItemDataRole.UserRole + 42
+
+
+class DeprecatedOptionItemDelegate(QStyledItemDelegate):
+    """
+    Delegate for StyledComboBox popup items that renders retired/deprecated options
+    with muted text, disabled unselectable appearance, and a red [Deprecated] chip badge.
+    """
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+
+    def paint(self, painter: QPainter, option: QStyleOptionViewItem, index: Any) -> None:
+        is_deprecated = bool(index.data(DEPRECATED_ITEM_ROLE))
+        if not is_deprecated:
+            super().paint(painter, option, index)
+            return
+
+        painter.save()
+        painter.setRenderHint(QPainter.Antialiasing, True)
+        painter.setRenderHint(QPainter.TextAntialiasing, True)
+
+        rect = option.rect
+
+        # Fill background with clean input background
+        painter.fillRect(rect, QColor(BrandColors.INPUT_BG))
+
+        # Prepare Deprecated badge
+        badge_text = "Deprecated"
+        badge_font = QFont(option.font)
+        badge_point_size = option.font.pointSize()
+        if badge_point_size > 0:
+            badge_font.setPointSize(max(8, badge_point_size - 2))
+        else:
+            badge_font.setPixelSize(11)
+        badge_font.setBold(True)
+
+        painter.setFont(badge_font)
+        fm_badge = painter.fontMetrics()
+        badge_text_w = fm_badge.horizontalAdvance(badge_text)
+        badge_text_h = fm_badge.height()
+
+        pad_h = 8
+        pad_v = 2
+        badge_w = badge_text_w + (pad_h * 2)
+        badge_h = badge_text_h + (pad_v * 2)
+
+        margin_right = 10
+        badge_x = rect.right() - badge_w - margin_right
+        badge_y = rect.top() + (rect.height() - badge_h) // 2
+        badge_rect = QRect(badge_x, badge_y, badge_w, badge_h)
+
+        # Draw item text in muted disabled color
+        item_text = str(index.data(Qt.ItemDataRole.DisplayRole) or "")
+        text_padding_left = 12
+        max_text_w = max(0, badge_x - rect.left() - text_padding_left - 8)
+        text_rect = QRect(
+            rect.left() + text_padding_left,
+            rect.top(),
+            max_text_w,
+            rect.height(),
+        )
+
+        painter.setFont(option.font)
+        painter.setPen(QPen(QColor(BrandColors.TEXT_DISABLED)))
+        fm_text = painter.fontMetrics()
+        elided_text = fm_text.elidedText(item_text, Qt.TextElideMode.ElideRight, max_text_w)
+        painter.drawText(
+            text_rect,
+            Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignLeft,
+            elided_text,
+        )
+
+        # Draw Deprecated Chip Badge
+        chip_bg = QColor("#3d1414")
+        chip_border = QColor("#802020")
+        chip_text_color = QColor(BrandColors.DANGER)
+
+        painter.setFont(badge_font)
+        painter.setPen(QPen(chip_border, 1))
+        painter.setBrush(QBrush(chip_bg))
+        painter.drawRoundedRect(badge_rect, 4.0, 4.0)
+
+        painter.setPen(QPen(chip_text_color))
+        painter.drawText(badge_rect, Qt.AlignmentFlag.AlignCenter, badge_text)
+
+        painter.restore()
+
+    def sizeHint(self, option: QStyleOptionViewItem, index: Any) -> QSize:
+        base_size = super().sizeHint(option, index)
+        return QSize(base_size.width(), max(base_size.height(), 32))
+
+
+def configure_deprecated_combobox_items(
+    combo: QComboBox,
+    deprecated_options: list[str] | set[str] | None,
+    tooltip: str = "Model has been retired",
+) -> None:
+    """
+    Marks deprecated options in a QComboBox as unselectable and disabled,
+    sets the retired tooltip, and attaches DeprecatedOptionItemDelegate.
+    """
+    if not deprecated_options:
+        return
+    dep_set = {str(opt).strip().lower() for opt in deprecated_options}
+    model = combo.model()
+    has_deprecated = False
+    for row in range(combo.count()):
+        text = combo.itemText(row).strip()
+        if text.lower() in dep_set:
+            has_deprecated = True
+            item = model.item(row)
+            if item:
+                item.setFlags(item.flags() & ~Qt.ItemFlag.ItemIsEnabled & ~Qt.ItemFlag.ItemIsSelectable)
+                item.setData(True, DEPRECATED_ITEM_ROLE)
+                if tooltip:
+                    item.setData(tooltip, Qt.ItemDataRole.ToolTipRole)
+
+    if has_deprecated and not getattr(combo, "_deprecated_delegate_installed", False):
+        combo.setItemDelegate(DeprecatedOptionItemDelegate(combo))
+        combo._deprecated_delegate_installed = True
 
 
 class Divider(QWidget):

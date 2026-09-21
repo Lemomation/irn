@@ -152,6 +152,8 @@ class SettingField:
     docs_anchor: Optional[str] = None
     hint_variant: Optional[str] = None
     button_height: Optional[str] = None
+    deprecated_options: Optional[List[str]] = None
+    deprecated_tooltip: Optional[str] = None
 
 @dataclass
 class SettingCategory:
@@ -524,7 +526,22 @@ SCHEMA = [
                 label="Model",
                 type=SettingType.DROPDOWN,
                 default="GLM-5.3",
-                options=["GLM-5.3-Flash", "GLM-5.3", "GLM-5.2", "GLM-5.1", "GLM-5-Turbo", "GLM-5V-Turbo", "GLM-4.7"],
+                options=[
+                    "GLM-5.3-Flash",
+                    "GLM-5.3",
+                    "GLM-5.2",
+                    "GLM-5.1",
+                    "GLM-5-Turbo",
+                    "GLM-5V-Turbo",
+                    "GLM-4.7",
+                ],
+                deprecated_options=[
+                    "GLM-5.1",
+                    "GLM-5-Turbo",
+                    "GLM-5V-Turbo",
+                    "GLM-4.7",
+                ],
+                deprecated_tooltip="Model has been retired",
                 tooltip="Select which GLM model to use in the web UI. Not related to the API model IDs.",
                 docs_path=DOCS_GLM,
                 docs_anchor="modes-model-ids",
@@ -543,11 +560,12 @@ SCHEMA = [
                 label="Deep Think Effort",
                 type=SettingType.DROPDOWN,
                 default="Max",
-                options=["High", "Max"],
-                tooltip="Select the Deep Think effort for GLM-5.2 / GLM-5.3 when Deep Think is enabled.",
+                options=["Low", "High", "Max"],
+                tooltip="Select the Deep Think effort for GLM-5.2 / GLM-5.3 / GLM-5.3-Flash when Deep Think is enabled.",
                 visible_depends=(
-                    "glm_behavior.model==GLM-5.2&&glm_behavior.enable_deepthink"
+                    "glm_behavior.model==GLM-5.3-Flash&&glm_behavior.enable_deepthink"
                     "||glm_behavior.model==GLM-5.3&&glm_behavior.enable_deepthink"
+                    "||glm_behavior.model==GLM-5.2&&glm_behavior.enable_deepthink"
                 ),
                 docs_path=DOCS_GLM,
                 docs_anchor="deep-think-effort",
@@ -978,7 +996,50 @@ SCHEMA = [
                     "Qwen3.7-Max",
                     "Qwen3.6-Plus",
                     "Qwen3.5-Plus",
+                    "Qwen3.6-Max-Preview",
+                    "Qwen3.6-27B",
+                    "Qwen3.7-Max-Preview",
+                    "Qwen3.7-Plus-Preview",
+                    "Qwen3.5-Omni-Plus",
+                    "Qwen3.6-35B-A3B",
+                    "Qwen3.5-Flash",
+                    "Qwen3.5-Max-Preview",
+                    "Qwen3.6-Plus-Preview",
+                    "Qwen3.5-397B-A17B",
+                    "Qwen3.5-122B-A10B",
+                    "Qwen3.5-Omni-Flash",
+                    "Qwen3.5-27B",
+                    "Qwen3.5-35B-A3B",
+                    "Qwen3-Max",
+                    "Qwen3-235B-A22B-2507",
+                    "Qwen3-Coder",
+                    "Qwen3-VL-235B-A22B",
+                    "Qwen3-Omni-Flash",
+                    "Qwen2.5-Max",
                 ],
+                deprecated_options=[
+                    "Qwen3.6-Max-Preview",
+                    "Qwen3.6-27B",
+                    "Qwen3.7-Max-Preview",
+                    "Qwen3.7-Plus-Preview",
+                    "Qwen3.5-Omni-Plus",
+                    "Qwen3.6-35B-A3B",
+                    "Qwen3.5-Flash",
+                    "Qwen3.5-Max-Preview",
+                    "Qwen3.6-Plus-Preview",
+                    "Qwen3.5-397B-A17B",
+                    "Qwen3.5-122B-A10B",
+                    "Qwen3.5-Omni-Flash",
+                    "Qwen3.5-27B",
+                    "Qwen3.5-35B-A3B",
+                    "Qwen3-Max",
+                    "Qwen3-235B-A22B-2507",
+                    "Qwen3-Coder",
+                    "Qwen3-VL-235B-A22B",
+                    "Qwen3-Omni-Flash",
+                    "Qwen2.5-Max",
+                ],
+                deprecated_tooltip="Model has been retired",
                 tooltip="Select which Qwen model to use in the web UI. Not related to the API model IDs.",
                 docs_path=DOCS_QWEN,
                 docs_anchor="real-qwen-model-selection-web-ui",
