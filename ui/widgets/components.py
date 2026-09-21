@@ -290,7 +290,32 @@ class StyledComboBox(QComboBox):
                 color: {BrandColors.TEXT_DISABLED};
                 background-color: transparent;
             }}
+            QScrollBar:vertical {{
+                border: none;
+                background: transparent;
+                width: 8px;
+                margin: 2px 0px 2px 0px;
+            }}
+            QScrollBar::handle:vertical {{
+                background: #555555;
+                border-radius: 4px;
+                min-height: 20px;
+            }}
+            QScrollBar::handle:vertical:hover {{
+                background: #777777;
+            }}
+            QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {{
+                height: 0px;
+            }}
+            QScrollBar::add-page:vertical, QScrollBar::sub-page:vertical {{
+                background: none;
+            }}
         """)
+        self.setMaxVisibleItems(8)
+        view = self.view()
+        if view:
+            view.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
+            view.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
     
     def wheelEvent(self, event):
         # Ignore wheel events to prevent accidental value changes when scrolling

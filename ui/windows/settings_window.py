@@ -1286,6 +1286,28 @@ class SettingsWindow(QMainWindow):
             if len(dynamic_options) == 1:
                 dynamic_options.append(unavailable)
             return dynamic_options
+
+        deprecated_options = getattr(field, "deprecated_options", None)
+        if deprecated_options and field.key == "model":
+            dep_set = {str(o).strip().lower() for o in deprecated_options}
+            toggle_widget = self.field_widgets.get(f"{category_key}.show_deprecated_models")
+            if toggle_widget is not None and hasattr(toggle_widget, "isChecked"):
+                show_deprecated = toggle_widget.isChecked()
+            else:
+                show_deprecated = bool(self.config_manager.get_setting(category_key, "show_deprecated_models"))
+
+            saved_model = str(self.config_manager.get_setting(category_key, field.key) or "").strip().lower()
+            current_widget = self.field_widgets.get(f"{category_key}.{field.key}")
+            current_model = (
+                current_widget.currentText().strip().lower()
+                if current_widget is not None and hasattr(current_widget, "currentText")
+                else ""
+            )
+            saved_is_deprecated = (saved_model in dep_set) or (current_model in dep_set)
+
+            if not show_deprecated and not saved_is_deprecated:
+                options = [opt for opt in options if str(opt).strip().lower() not in dep_set]
+
         return options
 
     def _refresh_dropdown_options_for_field(self, category_key: str, field) -> None:
@@ -4553,6 +4575,11 @@ class SettingsWindow(QMainWindow):
             QTimer.singleShot(0, self._sync_runtime_parallelization_widgets_from_config)
         elif full_key == "providers_credentials.provider":
             QTimer.singleShot(0, self._sync_runtime_parallelization_current_provider)
+        elif full_key.endswith(".show_deprecated_models"):
+            category_key = full_key.split(".", 1)[0]
+            model_field = self.field_defs.get(f"{category_key}.model")
+            if model_field:
+                QTimer.singleShot(0, lambda c=category_key, f=model_field: self._refresh_dropdown_options_for_field(c, f))
         if full_key and self._is_loadout_controlled_full_key(full_key):
             field_def = self.field_defs.get(full_key)
             if field_def is not None:
