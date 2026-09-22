@@ -520,6 +520,35 @@ def _resolve_glm_deprecated_model_alias(normalized: str) -> str | None:
     return match
 
 
+MIMO_DEPRECATED_MODEL_ALIASES: Dict[str, str] = {
+    "v2-5-pro": "MiMo-V2.6-Pro",
+    "v2.5-pro": "MiMo-V2.6-Pro",
+    "v2-5": "MiMo-V2.6-Pro",
+    "v2.5": "MiMo-V2.6-Pro",
+    "2-5-pro": "MiMo-V2.6-Pro",
+    "2.5-pro": "MiMo-V2.6-Pro",
+    "2-5": "MiMo-V2.6-Pro",
+    "2.5": "MiMo-V2.6-Pro",
+}
+
+
+def _resolve_mimo_deprecated_model_alias(normalized: str) -> str | None:
+    base = normalized
+    for suffix, _ in REAL_MODEL_SUFFIX_MODE_BY_SUFFIX:
+        if base.endswith(suffix) and len(base) > len(suffix):
+            base = base[:-len(suffix)]
+            break
+    if base.startswith("mimo-"):
+        base = base[len("mimo-"):]
+    elif base.startswith("mimo"):
+        base = base[len("mimo"):]
+
+    match = MIMO_DEPRECATED_MODEL_ALIASES.get(base)
+    if match is None and "." in base:
+        match = MIMO_DEPRECATED_MODEL_ALIASES.get(base.replace(".", "-"))
+    return match
+
+
 def resolve_real_model_label_from_model_id(
     provider: DriverProvider,
     model: Any,
@@ -547,6 +576,8 @@ def resolve_real_model_label_from_model_id(
         res = _resolve_qwen_deprecated_model_alias(normalized)
     if res is None and provider == DriverProvider.GLM_CHAT:
         res = _resolve_glm_deprecated_model_alias(normalized)
+    if res is None and provider == DriverProvider.MIMO:
+        res = _resolve_mimo_deprecated_model_alias(normalized)
     return res
 
 

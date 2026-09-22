@@ -35,15 +35,19 @@ IntenseRP can switch MiMo's real model picker in the web UI:
 
 Supported options right now:
 
-- **MiMo-V2.5-Pro** (default)
-- **MiMo-V2.5**
+- **MiMo-V2.6-Pro** (default)
+- **MiMo-V2.6-Flash**
+- **MiMo-V2.5-Pro** (retired)
+- **MiMo-V2.5** (retired)
 
 If **Use Universal Model Names** is enabled, these real model picker entries also appear as request-level model IDs:
 
 | Real model | Example IDs |
 |---|---|
-| MiMo-V2.5-Pro | `mimo-v2-5-pro-auto`, `mimo-v2-5-pro-chat`, `mimo-v2-5-pro-reasoner` |
-| MiMo-V2.5 | `mimo-v2-5-auto`, `mimo-v2-5-chat`, `mimo-v2-5-reasoner` |
+| MiMo-V2.6-Pro | `mimo-v2-6-pro-auto`, `mimo-v2-6-pro-chat`, `mimo-v2-6-pro-reasoner` |
+| MiMo-V2.6-Flash | `mimo-v2-6-flash-auto`, `mimo-v2-6-flash-chat`, `mimo-v2-6-flash-reasoner` |
+| MiMo-V2.5-Pro *(retired)* | `mimo-v2-5-pro-auto`, `mimo-v2-5-pro-chat` *(aliased to MiMo-V2.6-Pro)* |
+| MiMo-V2.5 *(retired)* | `mimo-v2-5-auto`, `mimo-v2-5-chat` *(aliased to MiMo-V2.6-Pro)* |
 
 Those IDs switch the MiMo web UI model for that request, then apply the `auto` / `chat` / `reasoner` behavior on top.
 
@@ -267,7 +271,8 @@ You can add simple `[[...]]` macros to the latest user message to override a few
 
 | Setting | What It Does | Default |
 |---------|--------------|---------|
-| **Model** | Selects MiMo's real model picker | MiMo-V2.5-Pro |
+| **Model** | Selects MiMo's real model picker | MiMo-V2.6-Pro |
+| **Show Retired Models** | Displays retired MiMo models in the dropdown | Off |
 | **Send Thinking** | Forwards `<think>` text to the API client | Off |
 | **Count Tokens** | Returns token usage when MiMo provides it | On |
 | **Send As Text File** | Uploads the prompt as `.txt` | Off |

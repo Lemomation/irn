@@ -37,6 +37,11 @@ GLM_MODEL_RENAMES = {
     "GLM-5": "GLM-5.2",
 }
 
+MIMO_MODEL_RENAMES = {
+    "MiMo-V2.5-Pro": "MiMo-V2.6-Pro",
+    "MiMo-V2.5": "MiMo-V2.6-Pro",
+}
+
 LEGACY_PARALLEL_PROVIDER_FIELD_BY_PROVIDER = {
     DriverProvider.DEEPSEEK: "parallel_enable_deepseek",
     DriverProvider.GLM_CHAT: "parallel_enable_glm",
@@ -72,6 +77,25 @@ def migrate_glm_behavior_settings(raw_settings: Any) -> bool:
 
     raw_model = raw_settings.get("model")
     migrated_model = migrate_glm_model_value(raw_model)
+    if migrated_model == raw_model:
+        return False
+
+    raw_settings["model"] = migrated_model
+    return True
+
+
+def migrate_mimo_model_value(value: Any) -> Any:
+    if not isinstance(value, str):
+        return value
+    return MIMO_MODEL_RENAMES.get(value, value)
+
+
+def migrate_mimo_behavior_settings(raw_settings: Any) -> bool:
+    if not isinstance(raw_settings, dict):
+        return False
+
+    raw_model = raw_settings.get("model")
+    migrated_model = migrate_mimo_model_value(raw_model)
     if migrated_model == raw_model:
         return False
 
@@ -192,8 +216,9 @@ class SettingsMigrator:
             raw_provider = providers_credentials.get("provider")
             providers_credentials["provider"] = DriverProvider.from_setting(raw_provider).value
 
-        # Migration: removed GLM model labels -> current supported labels
+        # Migration: removed GLM / MiMo model labels -> current supported labels
         migrate_glm_behavior_settings(settings.get("glm_behavior"))
+        migrate_mimo_behavior_settings(settings.get("mimo_behavior"))
 
         loadouts_root = settings.get("loadouts")
         if isinstance(loadouts_root, dict):
@@ -208,6 +233,8 @@ class SettingsMigrator:
                     provider = DriverProvider.from_setting(str(raw_provider))
                     if provider is DriverProvider.GLM_CHAT:
                         migrate_glm_behavior_settings(definition.get("settings"))
+                    elif provider is DriverProvider.MIMO:
+                        migrate_mimo_behavior_settings(definition.get("settings"))
 
         # Migration: account engine toggles moved from Experimental -> Providers & Credentials
         experimental = settings.get("experimental")

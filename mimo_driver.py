@@ -338,9 +338,19 @@ class MimoDriver(BaseDriver):
         "p-3px",
     )
     MODEL_LABELS: List[str] = [
+        "MiMo-V2.6-Pro",
+        "MiMo-V2.6-Flash",
         "MiMo-V2.5-Pro",
         "MiMo-V2.5",
     ]
+    RETIRED_MODEL_LABELS: set[str] = {
+        "MiMo-V2.5-Pro",
+        "MiMo-V2.5",
+    }
+    MIMO_RETIRED_MODEL_FALLBACKS: Dict[str, str] = {
+        "MiMo-V2.5-Pro": "MiMo-V2.6-Pro",
+        "MiMo-V2.5": "MiMo-V2.6-Pro",
+    }
 
     AUTH_TEXTAREA_SETTLE_S = 6.0
     INTERCEPT_IDLE_TIMEOUT_S = 75.0
@@ -847,11 +857,15 @@ class MimoDriver(BaseDriver):
         return re.sub(r"[^a-z0-9]+", "", normalized)
 
     def api_real_model_labels(self) -> list[str]:
-        return list(self.MODEL_LABELS)
+        return [
+            label for label in self.MODEL_LABELS
+            if label not in self.RETIRED_MODEL_LABELS
+        ]
 
     def _get_configured_model_label(self) -> str:
-        value = self._get_str_setting("model", "MiMo-V2.5-Pro").strip()
-        return value or "MiMo-V2.5-Pro"
+        value = self._get_str_setting("model", "MiMo-V2.6-Pro").strip()
+        chosen = value or "MiMo-V2.6-Pro"
+        return self.MIMO_RETIRED_MODEL_FALLBACKS.get(chosen, chosen)
 
     def _get_model_label_for_request(self, model: Any = None) -> str:
         override = resolve_real_model_label_from_model_id(
@@ -859,7 +873,8 @@ class MimoDriver(BaseDriver):
             model,
             self.api_real_model_labels(),
         )
-        return override or self._get_configured_model_label()
+        target = override or self._get_configured_model_label()
+        return self.MIMO_RETIRED_MODEL_FALLBACKS.get(target, target)
 
     async def apply_configured_model(self, model: Any = None) -> None:
         desired = self._get_model_label_for_request(model)
@@ -1514,6 +1529,7 @@ class MimoDriver(BaseDriver):
     async def _ensure_mimo_model_selected(self, desired_label: str) -> None:
         await self._dismiss_blocking_popups()
         desired = str(desired_label or "").strip()
+        desired = self.MIMO_RETIRED_MODEL_FALLBACKS.get(desired, desired)
         if not desired:
             return
 
@@ -2042,7 +2058,7 @@ class MimoDriver(BaseDriver):
             resolved_model,
             overrides=macros_overrides,
         )
-        ui_model_label = str(effective_settings.get("model_label") or "MiMo-V2.5-Pro")
+        ui_model_label = str(effective_settings.get("model_label") or "MiMo-V2.6-Pro")
         send_thinking = bool(effective_settings.get("send_deepthink"))
         send_as_text_file = bool(effective_settings.get("send_as_text_file"))
         include_usage = bool(effective_settings.get("count_tokens"))

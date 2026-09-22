@@ -3372,7 +3372,9 @@ class MainWindow(QMainWindow):
             canonicalize_label = getattr(runtime_driver, "_canonicalize_model_label", None)
             if callable(read_label) and callable(canonicalize_label):
                 current_label = str(await read_label() or "").strip()
-                if canonicalize_label(current_label) != canonicalize_label(desired):
+                fallback_map = getattr(runtime_driver, "MIMO_RETIRED_MODEL_FALLBACKS", {})
+                expected_target = fallback_map.get(desired, desired) if isinstance(fallback_map, dict) else desired
+                if canonicalize_label(current_label) != canonicalize_label(expected_target):
                     shown = current_label or "Unknown"
                     raise RuntimeError(
                         f"Xiaomi MiMo did not confirm the requested model switch (still showing '{shown}')."
