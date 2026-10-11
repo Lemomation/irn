@@ -1,0 +1,39 @@
+name: 🚀 Model / Feature Request
+description: Request a new model checkpoint or provider feature
+title: "[Request]: "
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Have a new model that just dropped? Let us know!
+        Note: Model additions and updates are typically rolled out over the weekend.
+  - type: dropdown
+    id: provider
+    attributes:
+      label: Provider
+      options:
+        - "Google AI Studio"
+        - "Xiaomi MiMo"
+        - "DeepSeek"
+        - "GLM Chat (Z.ai)"
+        - "Alibaba Qwen"
+        - "Kimi / Moonshot"
+        - "Perplexity"
+        - "HuggingChat"
+        - "New Provider"
+    validations:
+      required: true
+  - type: input
+    id: model_name
+    attributes:
+      label: Model Name / Checkpoint
+      description: What is the exact model name as shown on the provider's website?
+      placeholder: "e.g. MiMo-V2.6-Pro, Gemini 3.8 Flash, etc."
+    validations:
+      required: true
+  - type: textarea
+    id: details
+    attributes:
+      label: Additional Context
+      description: Any links to announcements, provider URLs, or special settings needed (e.g. reasoning effort, web search, system instructions).

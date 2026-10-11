@@ -395,8 +395,8 @@ def _release_notes_url_for_version(version: str) -> str:
     if value.lower().startswith("v"):
         value = value[1:].strip()
     if not value or value.lower() == "unknown":
-        return "https://github.com/Phobeuscz/irn/releases"
-    return f"https://github.com/Phobeuscz/irn/releases/tag/v{value}"
+        return "https://github.com/Lemomation/irn/releases"
+    return f"https://github.com/Lemomation/irn/releases/tag/v{value}"
 
 
 def _read_postupdate_cleanup_backup_dir(app_root: Path) -> tuple[Path, Path] | None:
@@ -513,7 +513,7 @@ def _consume_postupdate_installed_info() -> UpdateInstalledInfo | None:
     try:
         release_notes_url = _release_notes_url_for_version(version)
     except Exception:
-        release_notes_url = "https://github.com/Phobeuscz/irn/releases"
+        release_notes_url = "https://github.com/Lemomation/irn/releases"
 
     try:
         flag_path.unlink()
@@ -803,7 +803,7 @@ class MainWindow(QMainWindow):
             try:
                 release_notes_url = _release_notes_url_for_version(version)
             except Exception:
-                release_notes_url = "https://github.com/Phobeuscz/irn/releases"
+                release_notes_url = "https://github.com/Lemomation/irn/releases"
 
             self._post_update_info = UpdateInstalledInfo(
                 version=str(version or "unknown"),

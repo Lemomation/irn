@@ -10,7 +10,7 @@ import requests
 from utils.version_file import VersionFileInfo, parse_version_file
 
 DEFAULT_REMOTE_VERSION_URL = (
-    "https://raw.githubusercontent.com/Phobeuscz/irn/refs/heads/v2-rewrite/version.json"
+    "https://raw.githubusercontent.com/Lemomation/irn/refs/heads/v2-rewrite/version.json"
 )
 
 _SEMVER_RE = re.compile(

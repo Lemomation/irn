@@ -1,61 +1,69 @@
-# Contributing
+# Contributing to IRN (IntenseRP Next)
 
 Thanks for helping out!
-This project moves fast (and provider web UIs change often), so small, focused contributions work best.
 
-Before you start: please follow our `CODE_OF_CONDUCT.md`.
+This project moves fast and provider web interfaces change often, so contributions from the community are warmly welcomed.
 
-## Quick guidelines
+> **💡 Philosophy:** Contributions are encouraged! Just make sure you know what Playwright is, and verify that everything works. Vibe coding is completely accepted as long as it runs cleanly without bugs!
 
-- If you're not sure where to start, open an issue first.
-- Keep PRs small and scoped to one thing.
-- Avoid drive-by refactors (they get painful to review and go stale quickly).
+---
 
-## Bug reports
+## 📅 Maintenance & Model Update Schedule
 
-GitHub issues are best: https://github.com/LyubomirT/intense-rp-next/issues
+- **Driver & Model Updates**: If a new model drops or a provider tweaks their web interface, support will usually be added over the **weekend**. Please be patient!
+- **Bug Fixes**: Critical driver breakages or crashes are prioritized when reproducible reports come in.
 
-Please include:
+---
 
-- your version (see `version.json`)
-- OS (Windows/Linux) and anything unusual about your setup
-- exact steps to reproduce (what you clicked / what you sent)
-- what you expected vs what happened
-- logs (please redact passwords, API keys, and personal info)
+## 🐛 Bug Reports
 
-## Feature requests
+If something breaks, please open a GitHub Issue:  
+👉 **https://github.com/Lemomation/irn/issues**
 
-Open an issue and describe the use case. Screenshots and concrete examples help a lot.
+When reporting a bug, please include:
+1. **App Version**: From `version.json` or the app title bar (e.g., `v2.9.4`).
+2. **Provider & Model**: (e.g., Google AI Studio `gemini-2.5-flash`, Xiaomi MiMo `MiMo-V2.6-Pro`, etc.).
+3. **OS**: Windows or Linux.
+4. **Steps to Reproduce**: What you clicked or sent right before it failed.
+5. **Logs / Error Message**: Relevant error text from the UI console or terminal (please redact any personal info or session cookies).
 
-## Dev setup (from source)
+---
 
-Requirements: Python 3.12+ (3.13 recommended)
+## 🛠️ Dev Setup (Running from Source)
+
+**Requirements**: Python 3.12+ (3.12 or 3.13 recommended)
 
 ```bash
-git clone https://github.com/LyubomirT/intense-rp-next.git
-cd intense-rp-next
+# Clone this repository
+git clone https://github.com/Lemomation/irn.git
+cd irn
 
+# Create and activate virtual environment
 python -m venv venv
 
-source venv/bin/activate  # Linux/Mac
-# or: venv\Scripts\activate  # Windows
+# Linux / Mac:
+source venv/bin/activate
+# Windows (PowerShell / Command Prompt):
+venv\Scripts\activate
 
+# Install dependencies
 pip install -r requirements.txt
 
-# Optional, since IntenseRP can auto-download browsers
-playwright install chromium
-
+# Run IntenseRP Next
 python main.py
 ```
 
-## Pull requests
+---
 
-- Open an issue first for anything big or behavior-changing.
-- Match the existing style and structure (especially in the UI and provider drivers).
-- If you change user-facing behavior, update docs in `docs/` when it makes sense.
-- Please do not commit generated/local stuff like `venv/`, `dist/`, `build/`, `config_data/`, `cache/`, or `logs/` (they are in `.gitignore`).
+## 🚀 Pull Requests & Guidelines
 
-## Need to reach the maintainer?
+- **Keep PRs focused**: Small, single-purpose PRs (e.g. updating selectors for a specific provider driver or adding a new model to dropdowns) are easiest to review and merge quickly.
+- **Match existing driver patterns**: Check existing drivers (`aistudio_driver.py`, `glm_driver.py`, `mimo_driver.py`, `qwen_driver.py`) for reference on how streaming, cookies, and selectors are managed.
+- **Test locally**: Run the app and test at least one end-to-end prompt through SillyTavern or the dry-run console to confirm completion and streaming work as expected.
+- **Keep it clean**: Avoid committing temporary artifacts, caches, session folders, or personal configs (check `.gitignore`).
 
-For general discussion, use GitHub issues/PRs or Discussions.
-For private/sensitive topics, email `ternavski103@gmail.com` (or DM `@lyubomirt` on Discord / `@LyubomirT` on Telegram).
+---
+
+## 💬 Getting in Touch
+
+For bugs, ideas, and model requests, use **[GitHub Issues](https://github.com/Lemomation/irn/issues)** and **[Discussions](https://github.com/Lemomation/irn/discussions)**.

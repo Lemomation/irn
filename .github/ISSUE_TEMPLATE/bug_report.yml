@@ -1,0 +1,74 @@
+name: 🐛 Bug Report
+description: Report a broken provider driver, crash, or unexpected behavior
+title: "[Bug]: "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for reporting a bug! Please fill out the details below so we can track down the issue quickly.
+        Note: If a provider recently updated their website UI, driver selectors may need updating.
+  - type: dropdown
+    id: provider
+    attributes:
+      label: Provider
+      description: Which provider is experiencing the issue?
+      options:
+        - "Google AI Studio"
+        - "Xiaomi MiMo"
+        - "DeepSeek"
+        - "GLM Chat (Z.ai)"
+        - "Alibaba Qwen"
+        - "Kimi / Moonshot"
+        - "Perplexity"
+        - "HuggingChat"
+        - "Core App / GUI / Other"
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: IRN Version
+      description: What version of IRN are you running? (e.g. v2.9.4 or commit hash)
+      placeholder: "v2.9.4"
+    validations:
+      required: true
+  - type: dropdown
+    id: os
+    attributes:
+      label: Operating System
+      options:
+        - "Windows"
+        - "Linux"
+        - "Other"
+    validations:
+      required: true
+  - type: input
+    id: model
+    attributes:
+      label: Model Name / Preset
+      description: What model were you using? (e.g. MiMo-V2.6-Pro, gemini-3.8-flash, etc.)
+      placeholder: "e.g. MiMo-V2.6-Pro"
+  - type: textarea
+    id: description
+    attributes:
+      label: What happened?
+      description: Describe what you were doing and what went wrong.
+      placeholder: "When I send a message, the browser opens but gets stuck on..."
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Error Logs / Console Output
+      description: Paste any error messages from the app console or terminal output (please redact cookies or personal info).
+      render: shell
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Sanity Checks
+      options:
+        - label: I checked if the provider's website is currently up and accessible in a normal browser.
+          required: false
+        - label: I have redacted any personal credentials, API keys, or cookies from the logs.
+          required: true

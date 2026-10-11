@@ -18,9 +18,8 @@ This applies to our GitHub spaces (issues, PRs, discussions, etc.) and any commu
 
 If something feels off, you're allowed to speak up.
 
-- Normal project problems: open an issue at https://github.com/LyubomirT/intense-rp-next/issues
-- Code of Conduct concerns (or anything sensitive/private): email `ternavski103@gmail.com`
-- If email is not possible: DM on Discord (`@lyubomirt`) or Telegram (`@LyubomirT`)
+- Normal project problems: open an issue at https://github.com/Lemomation/irn/issues
+- Code of Conduct concerns (or anything sensitive/private): open a confidential issue or contact the repo maintainers via GitHub.
 
 When reporting, include what happened, where it happened (links help), and what kind of outcome you'd like.
 

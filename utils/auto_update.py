@@ -14,7 +14,7 @@ from typing import Callable, Optional
 import requests
 
 
-GITHUB_OWNER = "Phobeuscz"
+GITHUB_OWNER = "Lemomation"
 GITHUB_REPO = "irn"
 USER_AGENT = "IntenseRP-Next-AutoUpdater"
 GITHUB_API_VERSION = "2026-03-10"
