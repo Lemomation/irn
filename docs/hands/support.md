@@ -38,12 +38,6 @@ Use the project only with services, accounts, and data you are authorized to acc
 
     [:arrow_right: News](../news.md)
 
--   :material-message-text: **Community**
-
-    The Discord may still be available for community discussion, but it is not a guaranteed support channel.
-
-    [:arrow_right: Join Discord](https://discord.gg/4Gvjk2RdsK)
-
 </div>
 
 ---

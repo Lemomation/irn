@@ -2,7 +2,7 @@
   "version": "2.9.5",
   "aua": true,
   "severity": 3,
-  "pu": "discord",
+  "pu": "none",
   "pufref": "none",
   "summary": "Google AI Studio: Added Gemini 4 Argon support"
 }

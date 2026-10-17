@@ -73,5 +73,4 @@ v2 is a full rewrite, in simple words! The important part for users is not the r
 Need project context, old troubleshooting notes, or community links?
 
 [Contact The Dev](hands/contact.md){ .md-button }
-[Join Discord](https://discord.gg/4Gvjk2RdsK){ .md-button }
 [Project Status](hands/support.md){ .md-button }

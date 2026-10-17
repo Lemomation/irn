@@ -24,14 +24,6 @@ If you need to reach me or the community, these are the best places to do it.
 
     [:arrow_right: View repository](https://github.com/Lemomation/irn)
 
--   :material-chat: **Discord Server**
-
-    Best for: quick questions, shared troubleshooting, and casual feedback.
-
-    `discord.gg/4Gvjk2RdsK`
-
-    [:arrow_right: Join server](https://discord.gg/4Gvjk2RdsK)
-
 </div>
 
 !!! warning "Please redact secrets"

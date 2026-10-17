@@ -89,9 +89,9 @@ Quick answers to the questions that come up the most. If you need a step-by-step
     GitHub issues are best. Include your version, OS, exact steps to reproduce, and logs (redacted). Start with :material-bug: [Troubleshooting](troubleshooting.md) for a checklist and a copy/paste template.
 
 ??? question "I still need help - where do I reach you?"
-    For quick help and shared troubleshooting, join the [Discord server](https://discord.gg/4Gvjk2RdsK).
+    For help, bug reports, and discussions, open an issue on the [GitHub repository](https://github.com/Lemomation/irn/issues).
 
-    For private contact options, see :material-email: [Means of Contact](contact.md).
+    For more details, see :material-email: [Means of Contact](contact.md).
 
 ---
 

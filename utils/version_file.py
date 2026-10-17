@@ -7,7 +7,7 @@ from typing import Any
 DEFAULT_POST_UPDATE_ACTION = "survey"
 DEFAULT_POST_UPDATE_FUNCTION_REF = "none"
 DEFAULT_UPDATE_SUMMARY = ""
-_POST_UPDATE_ACTIONS = {"discord", "survey", "none"}
+_POST_UPDATE_ACTIONS = {"survey", "none"}
 
 
 @dataclass(frozen=True)
@@ -15,7 +15,7 @@ class VersionFileInfo:
     version: str
     auto_updateable: bool
     severity: int  # 1-4
-    post_update: str  # discord | survey | none
+    post_update: str  # survey | none
     post_update_function_ref: str = DEFAULT_POST_UPDATE_FUNCTION_REF
     summary: str = DEFAULT_UPDATE_SUMMARY
 
@@ -39,7 +39,7 @@ def parse_version_file(
     - version: SemVer-like string
     - aua: boolean (auto-updateable?)
     - severity: integer 1-4
-    - pu: post-update action (discord, survey, none)
+    - pu: post-update action (survey, none)
     - pufref: post-update function reference (none, or a registered function key)
     - summary: brief post-update summary text
     """
@@ -145,6 +145,8 @@ def _coerce_post_update(value: Any, *, default: str) -> str:
         normalized_default = DEFAULT_POST_UPDATE_ACTION
 
     normalized = str(value or "").strip().lower()
+    if normalized == "discord":
+        return "none"
     if normalized in _POST_UPDATE_ACTIONS:
         return normalized
     return normalized_default

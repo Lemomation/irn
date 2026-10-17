@@ -17,7 +17,6 @@ from utils.v1_migrator import V1Migrator
 from utils.logger import Logger
 
 
-DISCORD_INVITE_URL = "https://discord.gg/4Gvjk2RdsK"
 REPOSITORY_URL = "https://github.com/Lemomation/irn"
 DOCS_HOME_URL = "https://lemomation.github.io/irn/"
 
@@ -305,7 +304,6 @@ class HelpWindow(QMainWindow):
                 "Community & Project",
                 [
                     ("Contributors", IconType.CONTRIBUTORS, "", self.show_contributors),
-                    ("Discord Server", IconType.DISCORD, "Join the IntenseRP Next Discord server for community help and quick questions.", self.open_discord),
                     ("GitHub", IconType.GITHUB, "Open the IntenseRP Next GitHub repository.", self.open_github),
                 ],
             ),
@@ -400,9 +398,6 @@ class HelpWindow(QMainWindow):
             self.browser_manager_window = BrowserManagerWindow(main_window=self.main_window, parent=None)  # Top level
         self.browser_manager_window.show()
         self.browser_manager_window.activateWindow()
-
-    def open_discord(self):
-        QDesktopServices.openUrl(QUrl(DISCORD_INVITE_URL))
 
     def open_github(self):
         QDesktopServices.openUrl(QUrl(REPOSITORY_URL))

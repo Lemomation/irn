@@ -8,6 +8,27 @@ icon: material/newspaper-variant-outline
 
 This page is the changelog for the latest news and updates about IntenseRP Next.
 
+## October 17, 2026 - Update 2.9.5
+
+IntenseRP Next v2.9.5 is here!
+
+### Google AI Studio: Gemini 4 Argon Support
+Added support for Google AI Studio's newest model, **Gemini 4 Argon** (`gemini-4-argon` / `gemini-4-argon-low` / `gemini-4-argon-med` / `gemini-4-argon-high`).
+You can use it if you have a Google Cloud billing account linked or an active Google AI Pro/Ultra subscription. It features adjustable thinking effort levels (`Low`, `Medium`, and `High`) and is accessible directly via the AI Studio provider picker or through the OpenAI-compatible endpoint.
+
+### Active Fork Maintenance & Docs Migration
+The original repository was archived by the original author. This repository (`Lemomation/irn`) is now an actively maintained fork with ongoing model additions, provider fixes, and feature updates.
+
+As part of this transition:
+- **Hosted Docs**: Documentation is now hosted on GitHub Pages at [https://lemomation.github.io/irn/](https://lemomation.github.io/irn/), complete with updated links and guides.
+- **Issue Tracker & Discussions**: For bug reports, troubleshooting, or feature ideas, please use our [GitHub Issues](https://github.com/Lemomation/irn/issues).
+
+[Full Release Notes](https://github.com/Lemomation/irn/releases/tag/v2.9.5){ .md-button .md-button--primary }
+[Google AI Studio Behavior](providers/aistudio-behavior.md){ .md-button }
+[GitHub Repository](https://github.com/Lemomation/irn){ .md-button }
+
+---
+
 ## September 17, 2026 - Update 2.9.3
 
 A provider-fix follow-up with **Kimi K2.8** as its own picker model, **DeepSeek's new radio picker**, and a **GLM Chat** modal-overlay fix.
@@ -36,7 +57,6 @@ Kimi's aggressive rate limiting ("Too many people are chatting with Kimi right n
 
 Smaller goodies across both providers: FeiLin's console-wiping anti-debug trick is neutralized so DevTools logs survive challenges, CAPTCHA resource loading is observed and logged, UI reads use bounded timeouts so provider stalls can't freeze requests, and the API worker closes driver generators deterministically (no more `GeneratorExit` noise on retries).
 
-[Join our Discord](https://discord.gg/4Gvjk2RdsK){ .md-button }
 [GLM Behavior](providers/glm-behavior.md){ .md-button }
 [GLM Quirks](advanced/glm-quirks.md){ .md-button }
 [Moonshot Behavior](providers/moonshot-behavior.md){ .md-button }
@@ -47,14 +67,13 @@ Smaller goodies across both providers: FeiLin's console-wiping anti-debug trick 
 
 IntenseRP Next v2.9.0 is here, and this one is a little special: **IntenseRP Next is turning 1 year old this July**!!! 🎆🎆🎆✨✨✨
 
-Thank you so much to everyone who has used it, reported weird provider breakages, suggested ideas, joined the Discord, shared feedback, or just quietly kept the thing running in your own setup. This project would be a much lonelier pile of browser automation without you.
+Thank you so much to everyone who has used it, reported weird provider breakages, suggested ideas, shared feedback, or just quietly kept the thing running in your own setup. This project would be a much lonelier pile of browser automation without you.
 
 The headline feature is **Xiaomi MiMo support**. MiMo joins the provider list with model selection, thinking output filtering, token usage, prompt-file uploads, chat reuse, Xiaomi account login, and provider-specific proxy settings for regions where MiMo refuses to load. It's still region-dependent and a bit beta-ish, but it is now usable through IntenseRP's normal OpenAI-compatible API.
 
 This update also adds **Dry Run Mode**, a new API debugging workflow that starts the server without launching a provider browser and shows exactly what your client sent plus what IntenseRP's formatting pipeline produced. On the runtime side, **CDP Teeing** is now available across more drivers, browser proxy/viewport controls are better, backups/imports are safer, and the updater has received more polish.
 
 [Full Release Notes](https://github.com/LyubomirT/intense-rp-next/releases/tag/v2.9.0-update){ .md-button .md-button--primary }
-[Join our Discord](https://discord.gg/4Gvjk2RdsK){ .md-button }
 [Xiaomi MiMo Behavior](providers/mimo-behavior.md){ .md-button }
 [Dry Run Mode](features/network-api.md#dry-run-mode){ .md-button }
 
@@ -69,7 +88,6 @@ AI Studio is selectable again thanks to the new default **Humanize Mouse Movemen
 Providers in Parallel now lives under **Browser & Runtime**, and it can do more than keep extra provider lanes warm. Depending on the mode you choose, different provider lanes can answer queued API requests at the same time, and startup can launch active lanes concurrently. If that startup burst is too heavy, batching is there too (still speeds things up, but with more breathing room).
 
 [Full Release Notes](https://github.com/LyubomirT/intense-rp-next/releases/tag/v2.8.8-patch){ .md-button .md-button--primary }
-[Join our Discord](https://discord.gg/4Gvjk2RdsK){ .md-button }
 [Google AI Studio Behavior](providers/aistudio-behavior.md){ .md-button }
 [Providers in Parallel](runtime/providers-in-parallel.md){ .md-button }
 
@@ -84,7 +102,6 @@ If DeepSeek has been giving you trouble lately, HuggingChat gives you another ac
 That said, it's still not a magic solution. HuggingChat is still an early integration that depends on the web UI, and its monthly credits are a little tiny. The [HuggingChat Behavior docs](providers/huggingchat-behavior.md) cover the main things, credit limits, and account rotation setup.
 
 [Full Release Notes](https://github.com/LyubomirT/intense-rp-next/releases/tag/v2.8.6-patch){ .md-button .md-button--primary }
-[Join our Discord](https://discord.gg/4Gvjk2RdsK){ .md-button }
 [HuggingChat Feedback](https://forms.gle/J7MVdcnorEPE249v8){ .md-button }
 
 ---
@@ -98,7 +115,6 @@ This integration exists thanks to [Yurushia](https://github.com/twgok123), who h
 This release also includes some recent power-user and maintenance work: Full Parallelization for provider lanes, selective provider restarts when switching loadouts, AI Studio CAARS options, backup/import polish, and a more maintainable Remote Control frontend.
 
 [Full Release Notes](https://github.com/LyubomirT/intense-rp-next/releases/tag/v2.8.0-update){ .md-button .md-button--primary }
-[Join our Discord](https://discord.gg/4Gvjk2RdsK){ .md-button }
 [Suggest New Features](./vote-for-new-stuff.md){ .md-button }
 [Perplexity Behavior](providers/perplexity-behavior.md){ .md-button }
 
@@ -113,7 +129,6 @@ This update also brings **Providers in Parallel**, which can keep multiple provi
 GLM also gets **GLM-5-Turbo** as a selectable real model option under **Provider Behavior -> GLM Chat -> Model**, alongside the existing GLM model choices.
 
 [Full Release Notes](https://github.com/LyubomirT/intense-rp-next/releases/tag/v2.6.3-patch){ .md-button .md-button--primary }
-[Join our Discord](https://discord.gg/4Gvjk2RdsK){ .md-button }
 [Suggest New Features](./vote-for-new-stuff.md){ .md-button }
 
 ---
@@ -133,7 +148,6 @@ Moonshot now supports an experimental **Auto Login** flow for its Google popup, 
 Multi-Slot Cache is also now available on every current driver except **Google AI Studio**, which means **DeepSeek**, **GLM Chat**, **Moonshot**, and **QwenLM** can now look through older cached chats instead of only remembering the latest one. This is especially useful if you swipe a lot. More about that in the [Multi-Slot Cache docs page](features/multi-slot-cache.md).
 
 [Full Release Notes](https://github.com/LyubomirT/intense-rp-next/releases/tag/v2.6.1-patch){ .md-button .md-button--primary }
-[Join our Discord](https://discord.gg/4Gvjk2RdsK){ .md-button }
 [Suggest New Features](https://forms.gle/cRGEoTNKxUrjKRJ2A){ .md-button }
 
 ---
@@ -145,18 +159,7 @@ IntenseRP Next v2.6.0 is out, and the big headline is **Google AI Studio support
 This update also brings some nice extra polish: Moonshot now gets RP-friendly auto-adjustments just like Qwen, the Settings window loads much faster, mini help buttons were added around settings, the console got its own search, and there is a new v1-style multiline XML-like formatting preset too.
 
 [Full Release Notes](https://github.com/LyubomirT/intense-rp-next/releases/tag/v2.6.0-update){ .md-button .md-button--primary }
-[Join our Discord](https://discord.gg/4Gvjk2RdsK){ .md-button }
 [Suggest New Features](https://forms.gle/JCe8FQ27mPgdEGes7){ .md-button }
-
----
-
-## March 11, 2026 - Official Discord Server
-
-The official Discord server is finally here! :tada: 
-
-Based on the latest survey results, a majority vote favored creating a community space, so I've gone ahead and set it up. It's a little quiet for now since it's just starting out, but I'm hoping to expand it and see the community grow soon. If you want a place to chat, get support, or follow the latest updates more closely, come hang out!
-
-[Join the Discord Server](https://discord.gg/4Gvjk2RdsK){ .md-button .md-button--primary }
 
 ---
 

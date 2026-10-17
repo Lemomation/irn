@@ -269,7 +269,7 @@ When you check for updates, IntenseRP downloads the latest `version.json` from G
 - `version` - SemVer-style version string
 - `aua` - whether the update is auto-updateable (`true`/`false`)
 - `severity` - 1-4 (`optional`, `normal`, `important`, `critical`)
-- `pu` - post-update button mode: `survey`, `discord`, or `none`
+- `pu` - post-update button mode: `survey` or `none`
 - `pufref` - optional post-update helper action used by the app after the dialog closes
 - `summary` - optional short summary shown in the "Update Installed" dialog
 

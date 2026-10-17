@@ -15,8 +15,7 @@ from ui.core.icons import IconType, IconUtils
 REMOTE_LATEST_SURVEY_URL = (
     "https://raw.githubusercontent.com/Lemomation/irn/refs/heads/v2-rewrite/latestsurvey.txt"
 )
-DISCORD_INVITE_URL = "https://discord.gg/4Gvjk2RdsK"
-_POST_UPDATE_ACTIONS = {"discord", "survey", "none"}
+_POST_UPDATE_ACTIONS = {"survey", "none"}
 
 
 def _format_version(version: str) -> str:
@@ -190,26 +189,20 @@ class UpdateInstalledDialog(QDialog):
             self._post_update_button = None
             return None
 
-        button_text = "Join our Discord!" if action == "discord" else "Vote for the Next Update"
-
-        button = QPushButton(button_text)
+        button = QPushButton("Vote for the Next Update")
         button.setCursor(Qt.PointingHandCursor)
         button.setMinimumHeight(42)
         button.setStyleSheet(_post_update_button_style())
 
-        if action == "discord":
-            IconUtils.apply_icon(button, IconType.DISCORD, BrandColors.TEXT_PRIMARY, size=16)
+        icon = IconUtils.get_icon(
+            "external-link.svg",
+            color=BrandColors.TEXT_PRIMARY,
+            size=16,
+            widget=button,
+        )
+        if not icon.isNull():
+            button.setIcon(icon)
             button.setIconSize(QSize(16, 16))
-        else:
-            icon = IconUtils.get_icon(
-                "external-link.svg",
-                color=BrandColors.TEXT_PRIMARY,
-                size=16,
-                widget=button,
-            )
-            if not icon.isNull():
-                button.setIcon(icon)
-                button.setIconSize(QSize(16, 16))
 
         button.clicked.connect(self._on_post_update_clicked)
         self._post_update_button = button
@@ -222,11 +215,6 @@ class UpdateInstalledDialog(QDialog):
         self.accept()
 
     def _on_post_update_clicked(self) -> None:
-        action = _normalize_post_update_action(self._info.post_update)
-        if action == "discord":
-            QDesktopServices.openUrl(QUrl(DISCORD_INVITE_URL))
-            return
-
         btn = getattr(self, "_post_update_button", None)
         if btn is None:
             return
