@@ -171,6 +171,9 @@ class AIStudioDriver(BaseDriver):
     TEMPORARY_CHAT_BADGE_TIMEOUT_MS = 10000
     DEFAULT_MODEL_LABEL = "Gemini 3.1 Pro"
     DEFAULT_MAX_OUTPUT_TOKENS = 65536
+    PAID_MODEL_ERROR = (
+        "This model requires paid access in Google AI Studio, and IRP can't serve it."
+    )
     GEMINI_25_PAID_MODEL_ERROR = (
         "Gemini 2.5 models have become paid in Google AI Studio, and IRP can't serve them."
     )
@@ -315,6 +318,8 @@ class AIStudioDriver(BaseDriver):
         flags=re.IGNORECASE,
     )
     LOWEST_LEVEL_BY_MODEL: Dict[str, str] = {
+        "gemini-4-argon": "Low",
+        "gemini-4-argon-preview": "Low",
         "gemini-3.8-flash": "Low",
         "gemini-3.8-flash-preview": "Low",
         "gemini-3.7-flash": "Low",
@@ -332,6 +337,8 @@ class AIStudioDriver(BaseDriver):
         "gemma-4-31b-it": "Minimal",
     }
     THINKING_LEVELS_BY_MODEL: Dict[str, tuple[str, ...]] = {
+        "gemini-4-argon": ("Low", "Medium", "High"),
+        "gemini-4-argon-preview": ("Low", "Medium", "High"),
         "gemini-3.8-flash": ("Low", "Medium", "High"),
         "gemini-3.8-flash-preview": ("Low", "Medium", "High"),
         "gemini-3.7-flash": ("Low", "Medium", "High"),
@@ -376,6 +383,10 @@ class AIStudioDriver(BaseDriver):
         "gemini-2.5-flash-lite": (512, 24576),
     }
     MODEL_CONFIGS: Dict[str, Dict[str, Any]] = {
+        "Gemini 4 Argon": {
+            "base_id": "gemini-4-argon",
+            "selector_id": "model-carousel-row-models/gemini-4-argon",
+        },
         "Gemini 3.8 Flash": {
             "base_id": "gemini-3.8-flash",
             "selector_id": "model-carousel-row-models/gemini-3.8-flash",
@@ -1477,10 +1488,14 @@ class AIStudioDriver(BaseDriver):
     def _model_config_for_label(cls, label: str) -> Dict[str, Any]:
         return dict(cls.MODEL_CONFIGS.get(label) or cls.MODEL_CONFIGS[cls.DEFAULT_MODEL_LABEL])
 
-    @staticmethod
-    def _is_paid_gemini_25_model_config(model_config: Dict[str, Any]) -> bool:
+    @classmethod
+    def _is_paid_model_config(cls, model_config: Dict[str, Any]) -> bool:
+        if bool(model_config.get("is_paid")):
+            return True
         model_base_id = str(model_config.get("base_id") or "").strip().lower()
         return model_base_id.startswith("gemini-2.5-")
+
+    _is_paid_gemini_25_model_config = _is_paid_model_config
 
     @staticmethod
     def _normalize_account_email(email: Any) -> str:
@@ -1525,7 +1540,7 @@ class AIStudioDriver(BaseDriver):
             pair = None
         return self._normalize_account_email(getattr(pair, "email", None) if pair else None)
 
-    def _paid_gemini_25_access_allowed_for_current_account(self) -> bool:
+    def _paid_model_access_allowed_for_current_account(self) -> bool:
         if not self._assume_paid_model_access_enabled():
             return False
 
@@ -1536,7 +1551,10 @@ class AIStudioDriver(BaseDriver):
         active_email = self._active_account_email()
         return bool(active_email and active_email in allowed_emails)
 
-    def _paid_gemini_25_model_error(self) -> str:
+    _paid_gemini_25_access_allowed_for_current_account = _paid_model_access_allowed_for_current_account
+
+    def _paid_model_error(self, model_label: str = "") -> str:
+        name = model_label or "Gemini 2.5"
         if not self._assume_paid_model_access_enabled():
             return (
                 f"{self.GEMINI_25_PAID_MODEL_ERROR} Enable Assume Paid Model Access only "
@@ -1548,27 +1566,30 @@ class AIStudioDriver(BaseDriver):
             active_email = self._active_account_email()
             account_label = f"`{active_email}`" if active_email else "the current manual account"
             return (
-                "Gemini 2.5 models require paid access in Google AI Studio. "
+                f"{name} models require paid access in Google AI Studio. "
                 "Assume Paid Model Access is enabled, but "
                 f"{account_label} is not listed in Paid Model Access Emails."
             )
 
         return self.GEMINI_25_PAID_MODEL_ERROR
 
+    _paid_gemini_25_model_error = _paid_model_error
+
     def _raise_if_model_unavailable(self, model_config: Dict[str, Any]) -> None:
         if (
-            self._is_paid_gemini_25_model_config(model_config)
-            and not self._paid_gemini_25_access_allowed_for_current_account()
+            self._is_paid_model_config(model_config)
+            and not self._paid_model_access_allowed_for_current_account()
         ):
-            raise RuntimeError(self._paid_gemini_25_model_error())
+            base_id = str(model_config.get("base_id") or "")
+            raise RuntimeError(self._paid_model_error(base_id or "Selected model"))
 
     def can_handle_request_model(self, model: Any = None) -> bool:
         """Return whether this account-backed driver can handle the requested model."""
         desired_label = self._resolve_model_label_for_request(model)
         model_config = self._model_config_for_label(desired_label)
-        if not self._is_paid_gemini_25_model_config(model_config):
+        if not self._is_paid_model_config(model_config):
             return True
-        return self._paid_gemini_25_access_allowed_for_current_account()
+        return self._paid_model_access_allowed_for_current_account()
 
     def validate_request_model_available(self, model: Any = None) -> None:
         desired_label = self._resolve_model_label_for_request(model)
