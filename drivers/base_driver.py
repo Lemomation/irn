@@ -1624,7 +1624,19 @@ class BaseDriver(ABC):
     async def _get_http_client(self) -> httpx.AsyncClient:
         client = self._http_client
         if client is None or client.is_closed:
-            client = httpx.AsyncClient()
+            raw_proxy = ""
+            try:
+                raw_proxy = str(
+                    self.config_manager.get_setting("system_settings", "browser_proxy_url") or ""
+                ).strip()
+            except Exception:
+                pass
+            proxy_url = raw_proxy or None
+            try:
+                transport = httpx.AsyncHTTPTransport(retries=3, http2=True, proxy=proxy_url)
+                client = httpx.AsyncClient(transport=transport)
+            except Exception:
+                client = httpx.AsyncClient()
             self._http_client = client
         # Browser context cookies are the source of truth for provider requests
         # so clear httpx's jar so reusing the client does not carry Set-Cookie state forward

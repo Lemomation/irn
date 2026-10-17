@@ -2194,11 +2194,11 @@ class MainWindow(QMainWindow):
 
             version_label = QLabel(f"v{version}")
             version_label.setStyleSheet(f"""
-                font-size: {BrandColors.FONT_SIZE_SMALL};
+                font-size: 15px;
                 font-weight: bold;
-                color: {BrandColors.TEXT_SECONDARY};
+                color: {BrandColors.TEXT_PRIMARY};
                 background: transparent;
-                padding-top: 4px;
+                padding-top: 2px;
             """)
             layout.addWidget(version_label, alignment=Qt.AlignVCenter)
 

@@ -4939,6 +4939,103 @@ class AIStudioDriver(BaseDriver):
         """Return whether the latest assistant turn has visible generated text."""
         return bool(await self._latest_assistant_turn_visible_text())
 
+    async def _get_latest_assistant_turn_formatted_text(self) -> str:
+        """Extract rendered Markdown/plaintext from the latest assistant turn, preserving newlines."""
+        turn, _ = await self._find_latest_visible_assistant_turn()
+        if turn is None:
+            return ""
+
+        send_deepthink = bool(getattr(self, "current_send_deepthink", False))
+        try:
+            text = str(
+                await turn.evaluate(
+                    r"""(el, sendDeepthink) => {
+                        const clone = el.cloneNode(true);
+                        // Strip out buttons and internal badges
+                        const buttons = clone.querySelectorAll(
+                            'button, .button, [role="button"], .chat-turn-author-badge, .code-block-decoration, .mat-mdc-button'
+                        );
+                        buttons.forEach(n => n.remove());
+
+                        if (!sendDeepthink) {
+                            const thoughts = clone.querySelectorAll(
+                                'mat-expansion-panel, .thought-container, .thinking-container, [class*="thought"], [class*="thinking"]'
+                            );
+                            thoughts.forEach(n => n.remove());
+                        }
+                        return (clone.innerText || clone.textContent || '').trim();
+                    }""",
+                    send_deepthink,
+                ) or ""
+            )
+        except Exception:
+            return ""
+
+        if text.strip().lower() == "content blocked":
+            return ""
+        return text.strip()
+
+    async def _stream_response_from_dom(
+        self,
+        queue: asyncio.Queue,
+        *,
+        abort_event: asyncio.Event | None = None,
+        attempt_meta: Dict[str, Any] | None = None,
+        timeout_s: float = 180.0,
+    ) -> None:
+        """Stream generated response text directly from AI Studio's DOM as it updates."""
+        Logger.info("Google AI Studio: active DOM response streaming fallback engaged.")
+        deadline = time.time() + timeout_s
+        last_streamed_text = ""
+        saw_text = False
+        stop_seen = False
+        idle_counter = 0
+
+        try:
+            while time.time() < deadline:
+                if self.abort_requested or (abort_event and abort_event.is_set()):
+                    Logger.debug("Google AI Studio DOM stream: abort requested.")
+                    break
+
+                current_text = await self._get_latest_assistant_turn_formatted_text()
+                if current_text:
+                    if len(current_text) > len(last_streamed_text):
+                        if current_text.startswith(last_streamed_text):
+                            delta = current_text[len(last_streamed_text):]
+                        else:
+                            common_len = 0
+                            min_len = min(len(last_streamed_text), len(current_text))
+                            while common_len < min_len and last_streamed_text[common_len] == current_text[common_len]:
+                                common_len += 1
+                            delta = current_text[common_len:]
+
+                        last_streamed_text = current_text
+                        saw_text = True
+                        idle_counter = 0
+                        if attempt_meta is not None:
+                            attempt_meta["emitted_text"] = True
+                        if delta:
+                            await self._enqueue_openai_delta(queue, delta)
+
+                stop_button = await self._find_stop_generation_button(timeout_ms=0)
+                if stop_button is not None:
+                    stop_seen = True
+                    idle_counter = 0
+                else:
+                    if stop_seen or (saw_text and idle_counter >= 8):
+                        Logger.success("Google AI Studio: DOM response streaming finished.")
+                        break
+                    if saw_text:
+                        idle_counter += 1
+
+                await asyncio.sleep(0.15)
+        except Exception as e:
+            Logger.error(f"Google AI Studio: error during DOM stream scraping: {e}")
+        finally:
+            if saw_text:
+                await self._enqueue_openai_delta(queue, "", finish_reason="stop")
+            await queue.put(None)
+
     def _anti_censorship_edit_save_timeout_ms(self) -> int:
         value = self._clamp_int(
             self.config_manager.get_setting(
@@ -6191,10 +6288,18 @@ class AIStudioDriver(BaseDriver):
                     {"requestId": request_id},
                 )
             except Exception as exc:
-                message_text = f"Google AI Studio CDP response streaming failed: {exc}"
-                Logger.error(message_text)
-                await response_queue.put({"error": message_text})
-                await _finish_cdp_stream(request_id, encountered_error=True)
+                Logger.warning(
+                    f"Google AI Studio CDP response streaming failed ({exc}); "
+                    "falling back to DOM stream scraping..."
+                )
+                asyncio.create_task(
+                    self._stream_response_from_dom(
+                        response_queue,
+                        abort_event=abort_event,
+                        attempt_meta=current_attempt_meta,
+                    )
+                )
+                await _finish_cdp_stream(request_id)
                 return
 
             if isinstance(result, dict):
@@ -6297,6 +6402,21 @@ class AIStudioDriver(BaseDriver):
                 await _finish_cdp_stream(request_id)
                 return
 
+            if not cdp_had_data:
+                Logger.warning(
+                    f"Google AI Studio CDP stream failed before data was received ({error_text}); "
+                    "falling back to DOM stream scraping..."
+                )
+                asyncio.create_task(
+                    self._stream_response_from_dom(
+                        response_queue,
+                        abort_event=abort_event,
+                        attempt_meta=current_attempt_meta,
+                    )
+                )
+                await _finish_cdp_stream(request_id)
+                return
+
             message_text = f"Google AI Studio CDP stream failed: {error_text}"
             Logger.error(message_text)
             await response_queue.put({"error": message_text})
@@ -6363,10 +6483,16 @@ class AIStudioDriver(BaseDriver):
 
             try:
                 client = await self._get_http_client()
+                timeout = httpx.Timeout(
+                    connect=10.0,
+                    read=self.INTERCEPT_FIRST_CHUNK_TIMEOUT_S,
+                    write=60.0,
+                    pool=30.0,
+                )
                 request_kwargs: Dict[str, Any] = {
                     "headers": headers,
                     "cookies": cookie_dict,
-                    "timeout": 120.0,
+                    "timeout": timeout,
                 }
                 if request_body is not None:
                     request_kwargs["content"] = request_body
@@ -6393,11 +6519,45 @@ class AIStudioDriver(BaseDriver):
                             break
             except httpx.ReadError as e:
                 if not aborted and not self.abort_requested:
+                    if not full_response_body and not stream_state.get("emitted_text"):
+                        Logger.warning(
+                            f"Google AI Studio: intercepted network stream read error before data arrived ({e}); "
+                            "continuing browser route and falling back to DOM stream scraping..."
+                        )
+                        try:
+                            await route.continue_()
+                        except Exception as cont_exc:
+                            Logger.debug(f"Google AI Studio: route continue after failure: {cont_exc}")
+                        asyncio.create_task(
+                            self._stream_response_from_dom(
+                                response_queue,
+                                abort_event=abort_event,
+                                attempt_meta=current_attempt_meta,
+                            )
+                        )
+                        return
                     stream_state["encountered_error"] = True
                     Logger.error(f"Google AI Studio: read error during intercepted request: {e}")
                     await response_queue.put({"error": str(e)})
             except Exception as e:
                 if not aborted and not self.abort_requested:
+                    if not full_response_body and not stream_state.get("emitted_text"):
+                        Logger.warning(
+                            f"Google AI Studio: intercepted network stream failed before data arrived ({e}); "
+                            "continuing browser route and falling back to DOM stream scraping..."
+                        )
+                        try:
+                            await route.continue_()
+                        except Exception as cont_exc:
+                            Logger.debug(f"Google AI Studio: route continue after failure: {cont_exc}")
+                        asyncio.create_task(
+                            self._stream_response_from_dom(
+                                response_queue,
+                                abort_event=abort_event,
+                                attempt_meta=current_attempt_meta,
+                            )
+                        )
+                        return
                     stream_state["encountered_error"] = True
                     Logger.error(f"Google AI Studio: error during intercepted request: {e}")
                     await response_queue.put({"error": str(e)})

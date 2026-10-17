@@ -1,8 +1,8 @@
 {
-  "version": "2.9.5",
+  "version": "2.9.5-patch",
   "aua": true,
   "severity": 3,
   "pu": "none",
   "pufref": "none",
-  "summary": "Google AI Studio: Added Gemini 4 Argon support"
+  "summary": "Google AI Studio: Fixed stream cancellation and added resilient DOM stream fallback"
 }
