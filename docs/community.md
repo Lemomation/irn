@@ -29,7 +29,7 @@ contact page has all of that in one place.
 
     Best for: feature requests, bug reports, PRs, and following development.
 
-    [:arrow_right: Open the repository](https://github.com/LyubomirT/intense-rp-next)
+    [:arrow_right: Open the repository](https://github.com/Lemomation/irn)
 
 -   :material-email: **Full Contact Page**
 

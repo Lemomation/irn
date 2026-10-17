@@ -18,8 +18,8 @@ from utils.logger import Logger
 
 
 DISCORD_INVITE_URL = "https://discord.gg/4Gvjk2RdsK"
-REPOSITORY_URL = "https://github.com/LyubomirT/intense-rp-next"
-DOCS_HOME_URL = "https://intense-rp-next.readthedocs.io/en/latest/"
+REPOSITORY_URL = "https://github.com/Lemomation/irn"
+DOCS_HOME_URL = "https://lemomation.github.io/irn/"
 
 
 class _TileFlowLayout(QLayout):

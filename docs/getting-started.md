@@ -26,7 +26,7 @@ Pick your platform and let's go!
 
 === ":material-microsoft-windows: Windows"
 
-    1. Head to the [:material-github: Releases page](https://github.com/LyubomirT/intense-rp-next/releases)
+    1. Head to the [:material-github: Releases page](https://github.com/Lemomation/irn/releases)
     2. Grab the latest **`intenserp-next-v2-win32-x64.zip`**
     3. Extract it somewhere you'll remember
     4. Open the `intense-rp-next` folder and run **`intenserp-next-v2.exe`**
@@ -38,7 +38,7 @@ Pick your platform and let's go!
 
 === ":material-linux: Linux"
 
-    1. Head to the [:material-github: Releases page](https://github.com/LyubomirT/intense-rp-next/releases)
+    1. Head to the [:material-github: Releases page](https://github.com/Lemomation/irn/releases)
     2. Grab the latest **`intenserp-next-v2-linux-x64.tar.gz`**
     3. Extract and run:
     
@@ -57,7 +57,7 @@ Pick your platform and let's go!
     For developers or those who like living on the edge:
     
     ```bash
-    git clone https://github.com/LyubomirT/intense-rp-next.git
+    git clone https://github.com/Lemomation/irn.git
     cd intense-rp-next
     
     # Create a virtual environment (recommended)

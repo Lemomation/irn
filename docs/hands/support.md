@@ -4,13 +4,13 @@ icon: material/archive-outline
 
 # :material-archive-outline: Project Status
 
-IntenseRP Next v2 is being archived. The repository, releases, and docs remain available as historical/reference material, but active maintenance is not promised.
+The original repository was archived by LyubomirT. This fork (`Lemomation/irn`) is actively maintained by Lemomation with ongoing model additions, provider fixes, and feature updates.
 
 ---
 
 ## :material-information-outline: What this means
 
-Existing releases may continue to work for some setups, but provider web apps can change without warning. If a provider integration breaks, it may stay broken unless someone maintains a fork.
+Existing releases continue to receive updates here, but provider web apps can change without warning. If a provider integration breaks, please report it on the [GitHub Issues](https://github.com/Lemomation/irn/issues) page.
 
 Use the project only with services, accounts, and data you are authorized to access, and follow the applicable provider terms. Treat saved config directories carefully, since they can contain credentials, API keys, and browser session cookies.
 
@@ -22,9 +22,9 @@ Use the project only with services, accounts, and data you are authorized to acc
 
 -   :material-source-repository: **Repository**
 
-    Code, releases, issues, and historical project context.
+    Code, releases, issues, and project context.
 
-    [:arrow_right: Open GitHub](https://github.com/LyubomirT/intense-rp-next)
+    [:arrow_right: Open GitHub](https://github.com/Lemomation/irn)
 
 -   :material-bug: **Troubleshooting**
 

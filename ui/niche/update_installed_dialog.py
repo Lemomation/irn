@@ -13,7 +13,7 @@ from ui.core.icons import IconType, IconUtils
 
 
 REMOTE_LATEST_SURVEY_URL = (
-    "https://raw.githubusercontent.com/LyubomirT/intense-rp-next/refs/heads/v2-rewrite/latestsurvey.txt"
+    "https://raw.githubusercontent.com/Lemomation/irn/refs/heads/v2-rewrite/latestsurvey.txt"
 )
 DISCORD_INVITE_URL = "https://discord.gg/4Gvjk2RdsK"
 _POST_UPDATE_ACTIONS = {"discord", "survey", "none"}

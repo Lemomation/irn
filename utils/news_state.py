@@ -6,7 +6,7 @@ from utils.logger import Logger
 from utils.resource_path import resolve_resource_path
 
 
-NEWS_DOCS_URL = "https://intense-rp-next.readthedocs.io/en/latest/news/"
+NEWS_DOCS_URL = "https://lemomation.github.io/irn/news/"
 VIEWED_NEWS_FILENAME = "viewednews.txt"
 
 

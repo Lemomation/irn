@@ -73,13 +73,13 @@ Opens the IntenseRP Next Discord server for quick questions, shared troubleshoot
 
 Opens the main IntenseRP Next GitHub repository.
 
-:material-arrow-right: [Open Repository](https://github.com/LyubomirT/intense-rp-next)
+:material-arrow-right: [Open Repository](https://github.com/Lemomation/irn)
 
 ### :material-book-open-page-variant: Docs
 
 Opens the main documentation page.
 
-:material-arrow-right: [Open Docs](https://intense-rp-next.readthedocs.io/en/latest/)
+:material-arrow-right: [Open Docs](https://lemomation.github.io/irn/)
 
 ## :material-arrow-left: Back
 

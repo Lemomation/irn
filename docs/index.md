@@ -16,8 +16,8 @@ icon: material/home
 
 In plain terms, you log into a provider website, IntenseRP automates that page, and your client talks to IntenseRP through a local `/v1` API as usual. It's fragile by nature, because provider web UIs were not built to be APIs, but v2 was built to make that flow steadier and easier to live with.
 
-!!! warning "Archived project"
-    IntenseRP Next v2 is being archived and is no longer actively maintained. The docs remain here for existing users and historical reference.
+!!! info "Active Community Fork"
+    The original repository was archived by LyubomirT. This fork (`Lemomation/irn`) is actively maintained by Lemomation with ongoing model additions, provider fixes, and feature updates.
 
 <div class="grid cards" markdown>
 
@@ -65,8 +65,8 @@ v2 is a full rewrite, in simple words! The important part for users is not the r
 - A cleaner OpenAI-compatible API for clients like SillyTavern.
 - Support for a lot more providers than just DeepSeek, with more on the way.
 
-!!! note "Maintenance status"
-    Provider websites can change without warning. Because this project is being archived, breakages may not be fixed. Check the [GitHub repository](https://github.com/LyubomirT/intense-rp-next), the [News page](news.md), or the [Troubleshooting checklist](hands/troubleshooting.md) for historical context before relying on an existing release.
+!!! note "Community Maintenance"
+    Provider websites can change without warning. Check the [GitHub repository](https://github.com/Lemomation/irn), the [News page](news.md), or the [Troubleshooting checklist](hands/troubleshooting.md) for updates and release notes.
 
 ## Community & Project Status
 

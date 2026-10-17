@@ -47,8 +47,8 @@ class UpdateAvailableInfo:
         if remote.lower().startswith("v"):
             remote = remote[1:].strip()
         if not remote or remote.lower() == "unknown":
-            return "https://github.com/LyubomirT/intense-rp-next/releases"
-        return f"https://github.com/LyubomirT/intense-rp-next/releases/tag/v{remote}"
+            return "https://github.com/Lemomation/irn/releases"
+        return f"https://github.com/Lemomation/irn/releases/tag/v{remote}"
 
 
 class UpdateAvailableDialog(QDialog):

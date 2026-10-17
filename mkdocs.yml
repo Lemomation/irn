@@ -2,9 +2,9 @@ site_name: IntenseRP Next v2
 site_description: Documentation for IntenseRP Next v2
 # Read the Docs sets READTHEDOCS_CANONICAL_URL (includes /en/<version>/).
 # Use a fallback so local builds still get a stable site_url.
-site_url: !ENV [READTHEDOCS_CANONICAL_URL, https://intense-rp-next.readthedocs.io/en/latest/]
-repo_name: LyubomirT/intense-rp-next
-repo_url: https://github.com/LyubomirT/intense-rp-next
+site_url: https://lemomation.github.io/irn/
+repo_name: Lemomation/irn
+repo_url: https://github.com/Lemomation/irn
 edit_uri: edit/v2-rewrite/docs/
 
 # NOTE:

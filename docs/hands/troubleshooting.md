@@ -212,13 +212,13 @@ If something is genuinely broken (crash, login loop, API failures), a good repor
 
     Check if someone already reported it (and maybe a workaround exists).
 
-    [:arrow_right: Open issues](https://github.com/LyubomirT/intense-rp-next/issues)
+    [:arrow_right: Open issues](https://github.com/Lemomation/irn/issues)
 
 -   :material-bug: **Open a new issue**
 
     If it's new, file a bug report with the template below.
 
-    [:arrow_right: New issue](https://github.com/LyubomirT/intense-rp-next/issues/new/choose)
+    [:arrow_right: New issue](https://github.com/Lemomation/irn/issues/new/choose)
 
 -   :material-console: **Collect logs**
 

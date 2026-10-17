@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 
-DOCS_BASE_URL = "https://intense-rp-next.readthedocs.io/en/latest/"
+DOCS_BASE_URL = "https://lemomation.github.io/irn/"
 
 
 def build_docs_url(path: str, anchor: str | None = None) -> str:
