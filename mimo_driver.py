@@ -301,11 +301,33 @@ class MimoDriver(BaseDriver):
     ULTRA_URL = "https://aistudio.xiaomimimo.com/#/ultra"
     AUTH_COOKIE_URL = "https://aistudio.xiaomimimo.com"
     AUTH_COOKIE_NAMES = ("usedId", "userId", "userid")
-    CHAT_REQUEST_URL_PREFIX = "https://aistudio.xiaomimimo.com/open-apis/bot/chat?"
     CHAT_URL_RE = re.compile(
         r"^https://aistudio\.xiaomimimo\.com/#/(chat|ultra)/([^/?#]+)",
         re.IGNORECASE,
     )
+
+    @classmethod
+    def _is_chat_request_url(cls, url: str) -> bool:
+        u = str(url or "").lower()
+        if "aistudio.xiaomimimo.com" not in u:
+            return False
+        if "/gentitle" in u or "/save" in u or "/list" in u:
+            return False
+        return "/chat?" in u or "/chat/" in u or u.endswith("/chat")
+
+    async def _get_document_lang(self) -> str:
+        raw = await super()._get_document_lang()
+        raw = str(raw or "").strip()
+        if raw.startswith("{") and "value" in raw:
+            try:
+                data = json.loads(raw)
+                val = str(data.get("value") or "").strip().lower()
+                if val in ("system", "en", "en-us") or val.startswith("en-"):
+                    return "en-US"
+                return val or raw
+            except Exception:
+                pass
+        return raw
     LOGIN_URL_PREFIX = "https://account.xiaomi.com/fe/service/login/password"
 
     ANNOUNCEMENT_CLOSE_SELECTOR = "[data-track-id='claw_announcement_close_btn']"
@@ -2251,7 +2273,7 @@ class MimoDriver(BaseDriver):
             if not request_id or not isinstance(response, dict):
                 return
             url = str(response.get("url") or "")
-            if not url.startswith(self.CHAT_REQUEST_URL_PREFIX):
+            if not self._is_chat_request_url(url):
                 return
             method = request_methods.get(request_id, "").upper()
             if method and method != "POST":
