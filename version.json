@@ -1,8 +1,8 @@
 {
-  "version": "2.9.5-patch",
+  "version": "2.9.6",
   "aua": true,
   "severity": 3,
   "pu": "none",
   "pufref": "none",
-  "summary": "Google AI Studio: Fixed stream cancellation and added resilient DOM stream fallback"
+  "summary": "Xiaomi MiMo: Added MiMo-V2.6-Pro-Ultraspeed, updated endpoints, and fixed stream parsing"
 }

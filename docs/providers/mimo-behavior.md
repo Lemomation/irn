@@ -37,6 +37,7 @@ Supported options right now:
 
 - **MiMo-V2.6-Pro** (default)
 - **MiMo-V2.6-Flash**
+- **MiMo-V2.6-Pro-Ultraspeed**
 - **MiMo-V2.5-Pro** (retired)
 - **MiMo-V2.5** (retired)
 
@@ -46,10 +47,14 @@ If **Use Universal Model Names** is enabled, these real model picker entries als
 |---|---|
 | MiMo-V2.6-Pro | `mimo-v2-6-pro-auto`, `mimo-v2-6-pro-chat`, `mimo-v2-6-pro-reasoner` |
 | MiMo-V2.6-Flash | `mimo-v2-6-flash-auto`, `mimo-v2-6-flash-chat`, `mimo-v2-6-flash-reasoner` |
+| MiMo-V2.6-Pro-Ultraspeed | `mimo-v2-6-pro-ultraspeed-auto`, `mimo-v2-6-pro-ultraspeed-chat`, `mimo-v2-6-pro-ultraspeed-reasoner` |
 | MiMo-V2.5-Pro *(retired)* | `mimo-v2-5-pro-auto`, `mimo-v2-5-pro-chat` *(aliased to MiMo-V2.6-Pro)* |
 | MiMo-V2.5 *(retired)* | `mimo-v2-5-auto`, `mimo-v2-5-chat` *(aliased to MiMo-V2.6-Pro)* |
 
 Those IDs switch the MiMo web UI model for that request, then apply the `auto` / `chat` / `reasoner` behavior on top.
+
+!!! tip "MiMo-V2.6-Pro-Ultraspeed Mode"
+    Selecting **MiMo-V2.6-Pro-Ultraspeed** automatically routes sessions to Xiaomi MiMo Studio's dedicated UltraSpeed page (`https://aistudio.xiaomimimo.com/#/ultra`), capable of blazing-fast streaming output (often 700+ tokens/sec, reaching up to 1000+ TPS).
 
 ---
 

@@ -73,8 +73,6 @@ nav:
           - FAQ: hands/faq.md
   - Community:
       - Get Involved: community.md
-  - Vote for New Stuff:
-      - vote-for-new-stuff.md
 
 theme:
   name: material

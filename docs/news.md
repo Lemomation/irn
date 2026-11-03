@@ -8,6 +8,31 @@ icon: material/newspaper-variant-outline
 
 This page is the changelog for the latest news and updates about IntenseRP Next.
 
+## November 3, 2026 - Update 2.9.6
+
+### Xiaomi MiMo: UltraSpeed Mode & Stream Engine Overhaul
+Okay so today's update was meant to be a small one to add support for Xiaomi MiMo's ultraspeed chat mode, but it led to finding some outdated code and spending quite some time to fix it. Talking about the UltraSpeed mode, it gets 300–350 tokens/sec while thinking, and in output it easily reaches 700+ TPS (and even touches 1000+ TPS in some tests!).
+
+- **MiMo-V2.6-Pro-Ultraspeed**: Added to the model dropdown (and request-level model IDs). It routes directly to MiMo Studio's dedicated `#/ultra` interface.
+- **Provider URL & Stream Overhaul**: Found out the MiMo driver was using outdated endpoint URLs, which broke normal chat too. The completion interception URLs and SSE EventStream parser have been completely updated to match MiMo's latest API schema (`messageType: "assistant"` with `reasoningContent` and `content`). Forwarded assistant text and provider refusals now reach your client reliably, and thinking traces are properly enclosed in `<think>...</think>` tags when **Send Thinking** is enabled. (If anything doesn't work, feel free to open an issue!)
+- **UI Language Detection**: Fixed language detection for accounts configured with system/auto language attributes.
+
+*A quick note on MiMo's web UI*: MiMo has a fairly restrictive token limit, so heavy presets might hit limits, and it is heavily filtered/moderated—best used for clean/sterile tasks.
+
+### Looking Ahead
+I'm actually kind of really busy almost this entire month (November) so I'm worried I might not be able to push updates as a lot of new models are about to release this month, but I'll try to add support for all new models on weekends. The good news is that I'm free during winter, and I have some Quality of Life (QOL) updates planned for winter so that's good!
+
+**TL;DR**:
+- General support for MiMo models, including UltraSpeed (`MiMo-V2.6-Pro-Ultraspeed`).
+- Complete stream engine and URL fix for Xiaomi MiMo.
+- QOL updates planned for this winter.
+
+[Full Release Notes](https://github.com/Lemomation/irn/releases/tag/v2.9.6){ .md-button .md-button--primary }
+[Xiaomi MiMo Behavior](providers/mimo-behavior.md){ .md-button }
+[GitHub Repository](https://github.com/Lemomation/irn){ .md-button }
+
+---
+
 ## October 17, 2026 - Update 2.9.5
 
 IntenseRP Next v2.9.5 is here!
