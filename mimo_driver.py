@@ -107,6 +107,7 @@ class _MimoEventStreamParser:
         self.finish_emitted = False
         self.provider_final_seen = False
         self.sensitive_query_seen = False
+        self.thinking_active = False
 
         self._line_buffer = bytearray()
         self._event_name = ""
@@ -142,6 +143,11 @@ class _MimoEventStreamParser:
 
         if self.sensitive_query_seen:
             return out
+
+        if self.thinking_active:
+            self.thinking_active = False
+            if self.send_thinking:
+                out.append({"type": "delta", "content": "</think>"})
 
         if self._stripper is not None:
             tail = self._stripper.finish()
@@ -189,28 +195,6 @@ class _MimoEventStreamParser:
         payload = self._parse_json_data(data)
         out: list[dict[str, Any]] = []
 
-        if event_name == "message":
-            content = ""
-            if isinstance(payload, dict) and str(payload.get("type") or "") == "text":
-                content = str(payload.get("content") or "")
-            content = content.replace("\x00", "")
-            if not content:
-                return []
-
-            if self._stripper is not None:
-                content = self._stripper.feed(content)
-            if content:
-                self.emitted_text = True
-                out.append({"type": "delta", "content": content})
-            return out
-
-        if event_name == "usage":
-            usage = self._normalize_usage(payload)
-            if self.include_usage and usage and not self._usage_emitted:
-                self._usage_emitted = True
-                out.append({"type": "usage", "usage": usage})
-            return out
-
         if event_name == "sensitive_query":
             self.sensitive_query_seen = True
             out.append(
@@ -221,13 +205,79 @@ class _MimoEventStreamParser:
             )
             return out
 
-        if event_name == "finish":
+        if event_name == "error":
+            err = ""
+            if isinstance(payload, dict):
+                err = str(payload.get("message") or payload.get("error") or "")
+            if not err:
+                err = str(data or "MiMo returned an error event.")
+            out.append({"type": "error", "message": err})
+            return out
+
+        is_done = (
+            event_name == "finish"
+            or (isinstance(payload, dict) and str(payload.get("content") or "") == "[DONE]")
+            or str(data or "").strip() == "[DONE]"
+        )
+
+        if is_done:
             self.provider_final_seen = True
             if self.sensitive_query_seen:
                 return []
+            if self.thinking_active:
+                self.thinking_active = False
+                if self.send_thinking:
+                    out.append({"type": "delta", "content": "</think>"})
+            if self._stripper is not None:
+                tail = self._stripper.finish()
+                if tail:
+                    self.emitted_text = True
+                    out.append({"type": "delta", "content": tail})
             if self.emitted_text and not self.finish_emitted:
                 self.finish_emitted = True
                 out.append({"type": "delta", "content": "", "finish_reason": "stop"})
+            return out
+
+        if event_name == "usage":
+            usage = self._normalize_usage(payload)
+            if self.include_usage and usage and not self._usage_emitted:
+                self._usage_emitted = True
+                out.append({"type": "usage", "usage": usage})
+            return out
+
+        if event_name in ("message", ""):
+            if not isinstance(payload, dict):
+                return []
+
+            # 1. Reasoning content (thinking chunks)
+            reasoning_chunk = payload.get("reasoningContent")
+            if reasoning_chunk is not None:
+                reasoning = str(reasoning_chunk).replace("\x00", "")
+                if reasoning and self.send_thinking:
+                    if not self.thinking_active:
+                        self.thinking_active = True
+                        self.emitted_text = True
+                        out.append({"type": "delta", "content": "<think>"})
+                    self.emitted_text = True
+                    out.append({"type": "delta", "content": reasoning})
+
+            # 2. Assistant answer content
+            # Supports new schema ({"messageType": "assistant", "content": "..."})
+            # and legacy schema ({"type": "text", "content": "..."})
+            content_chunk = payload.get("content")
+            if content_chunk is not None and str(content_chunk) != "[DONE]":
+                content = str(content_chunk).replace("\x00", "")
+                if content:
+                    if self.thinking_active:
+                        self.thinking_active = False
+                        if self.send_thinking:
+                            out.append({"type": "delta", "content": "</think>"})
+                    if self._stripper is not None:
+                        content = self._stripper.feed(content)
+                    if content:
+                        self.emitted_text = True
+                        out.append({"type": "delta", "content": content})
+
             return out
 
         return []
