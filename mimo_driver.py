@@ -298,11 +298,12 @@ class _MimoEventStreamParser:
 
 class MimoDriver(BaseDriver):
     BASE_URL = "https://aistudio.xiaomimimo.com/#/c"
+    ULTRA_URL = "https://aistudio.xiaomimimo.com/#/ultra"
     AUTH_COOKIE_URL = "https://aistudio.xiaomimimo.com"
     AUTH_COOKIE_NAMES = ("usedId", "userId", "userid")
     CHAT_REQUEST_URL_PREFIX = "https://aistudio.xiaomimimo.com/open-apis/bot/chat?"
     CHAT_URL_RE = re.compile(
-        r"^https://aistudio\.xiaomimimo\.com/#/chat/([^/?#]+)",
+        r"^https://aistudio\.xiaomimimo\.com/#/(chat|ultra)/([^/?#]+)",
         re.IGNORECASE,
     )
     LOGIN_URL_PREFIX = "https://account.xiaomi.com/fe/service/login/password"
@@ -340,6 +341,7 @@ class MimoDriver(BaseDriver):
     MODEL_LABELS: List[str] = [
         "MiMo-V2.6-Pro",
         "MiMo-V2.6-Flash",
+        "MiMo-V2.6-Pro-Ultraspeed",
         "MiMo-V2.5-Pro",
         "MiMo-V2.5",
     ]
@@ -367,8 +369,18 @@ class MimoDriver(BaseDriver):
         self._abort_ui_task: asyncio.Task | None = None
         self._refresh_quirks()
 
-    def get_start_url(self) -> str:
+    @classmethod
+    def _is_ultraspeed_model(cls, model_label: Any) -> bool:
+        canon = cls._canonicalize_model_label(model_label)
+        return "ultra" in canon
+
+    def _get_target_url_for_model(self, model_label: Any) -> str:
+        if self._is_ultraspeed_model(model_label):
+            return self.ULTRA_URL
         return self.BASE_URL
+
+    def get_start_url(self) -> str:
+        return self._get_target_url_for_model(self._get_configured_model_label())
 
     def should_apply_configured_model_before_request(self) -> bool:
         return False
@@ -743,7 +755,7 @@ class MimoDriver(BaseDriver):
                 level="info",
             )
             await self._wait_until_logged_in()
-            await self.page.goto(self.BASE_URL, wait_until="domcontentloaded", timeout=45000)
+            await self.page.goto(self.get_start_url(), wait_until="domcontentloaded", timeout=45000)
             await self._wait_for_chat_ready(timeout_ms=60000)
             self._mark_active_ece_pair_used()
             return
@@ -759,7 +771,7 @@ class MimoDriver(BaseDriver):
                 level="warning",
             )
             await self._wait_until_logged_in()
-            await self.page.goto(self.BASE_URL, wait_until="domcontentloaded", timeout=45000)
+            await self.page.goto(self.get_start_url(), wait_until="domcontentloaded", timeout=45000)
             await self._wait_for_chat_ready(timeout_ms=60000)
             self._mark_active_ece_pair_used()
             return
@@ -840,7 +852,7 @@ class MimoDriver(BaseDriver):
             await self._wait_until_logged_in()
 
         try:
-            await self.page.goto(self.BASE_URL, wait_until="domcontentloaded", timeout=45000)
+            await self.page.goto(self.get_start_url(), wait_until="domcontentloaded", timeout=45000)
         except Exception:
             pass
         await self._wait_for_chat_ready(timeout_ms=60000)
@@ -885,6 +897,10 @@ class MimoDriver(BaseDriver):
     async def _read_current_mimo_model_label(self) -> str:
         if not self.page:
             return ""
+
+        current_url = str(getattr(self.page, "url", "") or "").strip().lower()
+        if "#/ultra" in current_url:
+            return "MiMo-V2.6-Pro-Ultraspeed"
 
         try:
             text = await self.page.evaluate(
@@ -1533,6 +1549,23 @@ class MimoDriver(BaseDriver):
         if not desired:
             return
 
+        current_url = str(getattr(self.page, "url", "") or "").strip().lower()
+        is_desired_ultra = self._is_ultraspeed_model(desired)
+
+        if is_desired_ultra:
+            if "#/ultra" in current_url:
+                return
+            if self.page:
+                Logger.debug("MiMo: navigating to UltraSpeed interface (#/ultra)...")
+                await self.page.goto(self.ULTRA_URL, wait_until="domcontentloaded", timeout=45000)
+                await self._wait_for_chat_ready(timeout_ms=60000)
+            return
+
+        if "#/ultra" in current_url and self.page:
+            Logger.debug("MiMo: navigating from UltraSpeed back to standard chat interface (#/c)...")
+            await self.page.goto(self.BASE_URL, wait_until="domcontentloaded", timeout=45000)
+            await self._wait_for_chat_ready(timeout_ms=60000)
+
         current = await self._read_current_mimo_model_label()
         Logger.debug(f"MiMo: model switch check current='{current or 'unknown'}' desired='{desired}'.")
         if self._canonicalize_model_label(current) == self._canonicalize_model_label(desired):
@@ -1637,12 +1670,13 @@ class MimoDriver(BaseDriver):
         match = self.CHAT_URL_RE.match(str(url or "").strip())
         if not match:
             return None
-        conversation_id = str(match.group(1) or "").strip()
+        section = str(match.group(1) or "chat").strip().lower()
+        conversation_id = str(match.group(2) or "").strip()
         if not conversation_id:
             return None
         return {
             "conversation_id": conversation_id,
-            "conversation_url": f"https://aistudio.xiaomimimo.com/#/chat/{conversation_id}",
+            "conversation_url": f"https://aistudio.xiaomimimo.com/#/{section}/{conversation_id}",
         }
 
     async def _get_current_conversation_info(self) -> Optional[Dict[str, str]]:
@@ -1739,7 +1773,9 @@ class MimoDriver(BaseDriver):
         _ = source
         if not self.page:
             return
-        await self.page.goto(self.BASE_URL, wait_until="domcontentloaded", timeout=45000)
+        target_label = self._get_model_label_for_request(self.current_model)
+        target_url = self._get_target_url_for_model(target_label)
+        await self.page.goto(target_url, wait_until="domcontentloaded", timeout=45000)
         await self._wait_for_chat_ready(timeout_ms=60000)
 
     async def set_deepthink_state(self, state: bool) -> None:

@@ -529,6 +529,18 @@ MIMO_DEPRECATED_MODEL_ALIASES: Dict[str, str] = {
     "2.5-pro": "MiMo-V2.6-Pro",
     "2-5": "MiMo-V2.6-Pro",
     "2.5": "MiMo-V2.6-Pro",
+    "ultraspeed": "MiMo-V2.6-Pro-Ultraspeed",
+    "ultra": "MiMo-V2.6-Pro-Ultraspeed",
+    "v2-6-pro-ultra": "MiMo-V2.6-Pro-Ultraspeed",
+    "v2.6-pro-ultra": "MiMo-V2.6-Pro-Ultraspeed",
+    "2-6-pro-ultra": "MiMo-V2.6-Pro-Ultraspeed",
+    "2.6-pro-ultra": "MiMo-V2.6-Pro-Ultraspeed",
+    "2-6-pro-ultraspeed": "MiMo-V2.6-Pro-Ultraspeed",
+    "2.6-pro-ultraspeed": "MiMo-V2.6-Pro-Ultraspeed",
+    "v2-6-ultraspeed": "MiMo-V2.6-Pro-Ultraspeed",
+    "v2.6-ultraspeed": "MiMo-V2.6-Pro-Ultraspeed",
+    "2-6-ultraspeed": "MiMo-V2.6-Pro-Ultraspeed",
+    "2.6-ultraspeed": "MiMo-V2.6-Pro-Ultraspeed",
 }
 
 

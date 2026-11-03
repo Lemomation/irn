@@ -1250,6 +1250,7 @@ SCHEMA = [
                 options=[
                     "MiMo-V2.6-Pro",
                     "MiMo-V2.6-Flash",
+                    "MiMo-V2.6-Pro-Ultraspeed",
                     "MiMo-V2.5-Pro",
                     "MiMo-V2.5",
                 ],
