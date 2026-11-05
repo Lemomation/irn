@@ -177,6 +177,21 @@ Contributions are encouraged! See **[CONTRIBUTING.md](CONTRIBUTING.md)** for det
 - Special thanks to past maintainers and contributors across earlier forks, including **[Phobeuscz](https://github.com/Phobeuscz)** and **[TalonHawke](https://github.com/TalonHawke)**.
 - Full contributor history: https://github.com/LyubomirT/intense-rp-next/graphs/contributors
 
+
+
+## Star History
+
+<a href="https://www.star-history.com/?repos=lemomation%2Firn&type=date&legend=top-left">
+ <picture>
+   <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/chart?repos=lemomation/irn&type=date&theme=dark&legend=top-left" />
+   <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/chart?repos=lemomation/irn&type=date&legend=top-left" />
+   <img alt="Star History Chart" src="https://api.star-history.com/chart?repos=lemomation/irn&type=date&legend=top-left" />
+ </picture>
+</a>
+
+
+
+
 Special thanks to the developers and tools powering the project: **FastAPI**, **PySide6 (Qt)**, and **Playwright / Patchright**.
 
 ## License
