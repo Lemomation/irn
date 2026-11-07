@@ -39,13 +39,17 @@ UMM_MODE_BY_MODEL_ID: Dict[str, str] = {
     "intenserp-chat": MODE_CHAT,
 }
 
-DEEPSEEK_UMM_EXPERT_MODE_BY_MODEL_ID: Dict[str, str] = {
-    "intenserp-expert-auto": MODE_AUTO,
-    "intenserp-expert-reasoner": MODE_REASONER,
-    "intenserp-expert-chat": MODE_CHAT,
+DEEPSEEK_DEPRECATED_MODEL_ALIASES: Dict[str, str] = {
+    "deepseek-expert-auto": "deepseek-auto",
+    "deepseek-expert-chat": "deepseek-chat",
+    "deepseek-expert-reasoner": "deepseek-reasoner",
+    "intenserp-expert-auto": "intenserp-auto",
+    "intenserp-expert-chat": "intenserp-chat",
+    "intenserp-expert-reasoner": "intenserp-reasoner",
 }
 
-DEEPSEEK_UMM_EXPERT_MODEL_IDS: tuple[str, ...] = tuple(DEEPSEEK_UMM_EXPERT_MODE_BY_MODEL_ID.keys())
+DEEPSEEK_UMM_EXPERT_MODE_BY_MODEL_ID: Dict[str, str] = {}
+DEEPSEEK_UMM_EXPERT_MODEL_IDS: tuple[str, ...] = ()
 
 
 LEGACY_MODE_BY_PROVIDER: Dict[DriverProvider, Dict[str, str]] = {
@@ -53,9 +57,6 @@ LEGACY_MODE_BY_PROVIDER: Dict[DriverProvider, Dict[str, str]] = {
         "deepseek-auto": MODE_AUTO,
         "deepseek-chat": MODE_CHAT,
         "deepseek-reasoner": MODE_REASONER,
-        "deepseek-expert-auto": MODE_AUTO,
-        "deepseek-expert-chat": MODE_CHAT,
-        "deepseek-expert-reasoner": MODE_REASONER,
     },
     DriverProvider.GLM_CHAT: {
         "glm-auto": MODE_AUTO,
@@ -161,11 +162,6 @@ def is_umm_enabled(config_manager: Any) -> bool:
 
 
 def _get_universal_mode_map(provider: DriverProvider) -> Dict[str, str]:
-    if provider == DriverProvider.DEEPSEEK:
-        return {
-            **UMM_MODE_BY_MODEL_ID,
-            **DEEPSEEK_UMM_EXPERT_MODE_BY_MODEL_ID,
-        }
     return UMM_MODE_BY_MODEL_ID
 
 
@@ -602,8 +598,6 @@ def get_model_ids_for_provider(
 ) -> list[str]:
     if (not force_legacy) and is_umm_enabled(config_manager):
         model_ids = list(UMM_MODEL_IDS)
-        if provider == DriverProvider.DEEPSEEK:
-            model_ids.extend(DEEPSEEK_UMM_EXPERT_MODEL_IDS)
         if provider in REAL_MODEL_ID_PROVIDERS:
             model_ids.extend(get_real_model_ids_for_labels(real_model_labels))
         return model_ids
@@ -687,6 +681,8 @@ def resolve_provider_from_model_id(
         legacy_model = normalized
         if provider == DriverProvider.AI_STUDIO:
             legacy_model = _strip_aistudio_override_suffix(legacy_model)
+        elif provider == DriverProvider.DEEPSEEK:
+            legacy_model = DEEPSEEK_DEPRECATED_MODEL_ALIASES.get(legacy_model, legacy_model)
         legacy_map = LEGACY_MODE_BY_PROVIDER.get(provider) or {}
         if legacy_model in legacy_map:
             return provider
@@ -726,6 +722,9 @@ def resolve_behavior_mode(
     if not normalized:
         return MODE_AUTO
 
+    if provider == DriverProvider.DEEPSEEK:
+        normalized = DEEPSEEK_DEPRECATED_MODEL_ALIASES.get(normalized, normalized)
+
     universal_mode = _get_universal_mode_map(provider).get(normalized)
     if universal_mode:
         return universal_mode
@@ -753,16 +752,6 @@ def resolve_behavior_mode(
 
 
 def resolve_deepseek_model_type(model: Any, provider: DriverProvider) -> str:
-    normalized = str(model or "").strip().lower()
-    if provider != DriverProvider.DEEPSEEK or not normalized:
-        return DEEPSEEK_MODEL_TYPE_DEFAULT
-
-    if (
-        normalized in DEEPSEEK_UMM_EXPERT_MODE_BY_MODEL_ID
-        or normalized.startswith("deepseek-expert-")
-    ):
-        return DEEPSEEK_MODEL_TYPE_EXPERT
-
     return DEEPSEEK_MODEL_TYPE_DEFAULT
 
 

@@ -1741,10 +1741,7 @@ class WelcomeWindow(QDialog):
             model_text = (
                 "deepseek-auto\n"
                 "deepseek-chat\n"
-                "deepseek-reasoner\n"
-                "deepseek-expert-auto\n"
-                "deepseek-expert-chat\n"
-                "deepseek-expert-reasoner"
+                "deepseek-reasoner"
             )
 
         key_text = "(leave blank)"

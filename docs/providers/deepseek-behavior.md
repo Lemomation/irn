@@ -82,9 +82,6 @@ Instead of typing your message into DeepSeek's chat box, IntenseRP can upload it
 
 :material-arrow-right: **Settings** → **Provider Behavior** → **DeepSeek** → **Send As Text File**
 
-!!! danger "Doesn't work on Expert anymore"
-    IntenseRP supports running both Instant and Expert modes of DeepSeek, but file upload has been removed by DeepSeek in Expert mode. So if you enable this setting while using Expert, IntenseRP will likely just ignore it and send the prompt as text like normal.
-
 ### File Upload Timeout
 
 When uploading files, DeepSeek takes a moment to process them before the send button becomes active. This setting controls how long IntenseRP waits (in seconds) before giving up.

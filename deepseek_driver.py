@@ -119,6 +119,9 @@ class DeepSeekDriver(BaseDriver):
         self._stream_active_fragment_type: Optional[str] = None
         self._stream_active_fragment_base_path: Optional[str] = None
         self._stream_provider_abort_requested = False
+        self.fragment_types: Dict[int, str] = {}
+        self.fragment_types_list: List[Optional[str]] = []
+        self.thinking_active: bool = False
 
     def get_start_url(self) -> str:
         return "https://chat.deepseek.com/"
@@ -137,7 +140,6 @@ class DeepSeekDriver(BaseDriver):
             await self._remember_send_control_signature(self._locate_send_control())
         except Exception:
             pass
-        await self._detect_model_type_picker_kind(log_result=True)
 
     def _locate_send_control(self):
         selector = ", ".join(self.SEND_CONTROL_SELECTORS)
@@ -841,6 +843,7 @@ class DeepSeekDriver(BaseDriver):
         await self.require_english_ui()
         
         # Reset state for new generation
+        self.fragment_types = {}
         self.fragment_types_list = []
         self.thinking_active = False
         self.abort_requested = False
@@ -1598,29 +1601,64 @@ class DeepSeekDriver(BaseDriver):
 
         return None
 
-    def _resolve_fragment_type_for_path(self, path: str | None) -> Optional[str]:
+    @staticmethod
+    def _extract_fragment_index(path: str | None) -> Optional[int]:
         normalized = str(path or "").strip()
-        if not normalized or not hasattr(self, "fragment_types_list"):
+        if not normalized:
             return None
-
         parts = normalized.split("/")
         try:
             if normalized.startswith("response/fragments/") and len(parts) >= 3:
-                index = int(parts[2])
+                return int(parts[2])
             elif normalized.startswith("fragments/") and len(parts) >= 2:
-                index = int(parts[1])
-            else:
-                return None
-        except ValueError:
+                return int(parts[1])
+        except (ValueError, TypeError):
+            return None
+        return None
+
+    def _store_fragment_type(self, index: int, frag_type: str) -> None:
+        if index is None or index < 0:
+            return
+        normalized_type = str(frag_type or "").strip().upper()
+        if not normalized_type:
+            return
+
+        if not hasattr(self, "fragment_types") or not isinstance(self.fragment_types, dict):
+            self.fragment_types = {}
+        self.fragment_types[index] = normalized_type
+
+        if not hasattr(self, "fragment_types_list") or not isinstance(self.fragment_types_list, list):
+            self.fragment_types_list = []
+        while len(self.fragment_types_list) <= index:
+            self.fragment_types_list.append(None)
+        self.fragment_types_list[index] = normalized_type
+
+    def _resolve_fragment_type_for_path(self, path: str | None) -> Optional[str]:
+        frag_idx = self._extract_fragment_index(path)
+        if frag_idx is None:
             return None
 
-        if not self.fragment_types_list:
-            return None
+        # Check stored fragment types dictionary
+        if hasattr(self, "fragment_types") and isinstance(self.fragment_types, dict):
+            if frag_idx in self.fragment_types:
+                return self.fragment_types[frag_idx]
 
-        try:
-            return str(self.fragment_types_list[index] or "").upper() or None
-        except (IndexError, TypeError):
-            return None
+        # Check legacy fragment types list
+        if hasattr(self, "fragment_types_list") and isinstance(self.fragment_types_list, list):
+            if 0 <= frag_idx < len(self.fragment_types_list):
+                val = self.fragment_types_list[frag_idx]
+                if val:
+                    return str(val).upper()
+
+        # Heuristic fallback:
+        # In DeepSeek with thinking, index 0 is THINK (or SEARCH). Any index >= 1 is the RESPONSE.
+        if frag_idx > 0:
+            return "RESPONSE"
+
+        if frag_idx == 0 and not getattr(self, "thinking_active", False):
+            return "RESPONSE"
+
+        return None
 
     def _remember_active_fragment(self, path: str | None) -> Optional[str]:
         base_path = self._get_stream_fragment_base_path(path)
@@ -1641,15 +1679,16 @@ class DeepSeekDriver(BaseDriver):
     def _append_stream_text(self, value: Any, *, send_deepthink: bool) -> str:
         text = str(value or "")
         fragment_type = str(self._stream_active_fragment_type or "").strip().upper()
-        if not fragment_type:
-            if getattr(self, "thinking_active", False):
-                return text if send_deepthink else ""
-            return text
 
         if fragment_type == "THINK":
             return text if send_deepthink else ""
-        if not self._is_stream_text_fragment(fragment_type):
+
+        if fragment_type in ("SEARCH", "TOOL_SEARCH"):
             return ""
+
+        if getattr(self, "thinking_active", False):
+            return text if send_deepthink else ""
+
         return text
 
     def _expand_relative_stream_ops(
@@ -1802,59 +1841,84 @@ class DeepSeekDriver(BaseDriver):
                                 content += "</think>"
                             self.thinking_active = False
                 
-                # Fragments append (New Fragment)
+                frag_idx = self._extract_fragment_index(item_p)
+
+                # Store fragment type if present in this op
+                if frag_idx is not None:
+                    if isinstance(item_v, dict) and "type" in item_v:
+                        self._store_fragment_type(frag_idx, str(item_v["type"]))
+                    elif item_p and item_p.endswith("/type") and isinstance(item_v, str):
+                        self._store_fragment_type(frag_idx, item_v)
+
+                # Fragments array update (APPEND, SET, or initial fragment payload)
                 # Handle both 'fragments' and 'response/fragments'
-                elif (item_p == "fragments" or item_p == "response/fragments") and item_o == "APPEND":
+                if (item_p in ("fragments", "response/fragments")) and isinstance(item_v, list):
                     fragments = item_v
-                    if isinstance(fragments, list):
-                        for frag in fragments:
-                            if isinstance(frag, dict):
-                                frag_type = str(frag.get("type") or "").upper()
-                                # Store type by index (len of list before append)
-                                if not hasattr(self, "fragment_types_list"):
-                                    self.fragment_types_list = []
-                                self.fragment_types_list.append(frag_type)
-                                self._stream_active_fragment_type = frag_type
-                                self._stream_active_fragment_base_path = (
-                                    "response/fragments/-1"
-                                    if str(item_p).startswith("response/")
-                                    else "fragments/-1"
+                    for idx, frag in enumerate(fragments):
+                        if isinstance(frag, dict):
+                            frag_type = str(frag.get("type") or "").upper()
+                            frag_id = frag.get("id")
+                            target_idx = (
+                                frag_id
+                                if isinstance(frag_id, int)
+                                else (len(getattr(self, "fragment_types", {})) if item_o == "APPEND" else idx)
+                            )
+                            if frag_type:
+                                self._store_fragment_type(target_idx, frag_type)
+                            self._stream_active_fragment_type = frag_type
+                            self._stream_active_fragment_base_path = (
+                                f"response/fragments/{target_idx}"
+                                if str(item_p).startswith("response/")
+                                else f"fragments/{target_idx}"
+                            )
+
+                            # Handle THINK start
+                            if frag_type == "THINK":
+                                if send_deepthink:
+                                    content += "<think>"
+                                self.thinking_active = True
+
+                            # Handle RESPONSE start (end of THINK if active)
+                            if frag_type in ("RESPONSE", "TEXT", "ANSWER", "CONTENT") and getattr(self, "thinking_active", False):
+                                if send_deepthink:
+                                    content += "</think>"
+                                self.thinking_active = False
+
+                            # Initial content
+                            if "content" in frag and frag["content"]:
+                                content += self._append_stream_text(
+                                    frag["content"],
+                                    send_deepthink=bool(send_deepthink),
                                 )
-                                
 
-                                
-                                # Handle THINK start
-                                if frag_type == "THINK":
-                                    if send_deepthink:
-                                        content += "<think>"
-                                    self.thinking_active = True
-                                
-                                # Handle RESPONSE start (end of THINK if active)
-                                if frag_type == "RESPONSE" and getattr(self, "thinking_active", False):
-                                    if send_deepthink:
-                                        content += "</think>"
-                                    self.thinking_active = False
-                                
-                                # Initial content
-                                if "content" in frag:
-                                    content += self._append_stream_text(
-                                        frag["content"],
-                                        send_deepthink=bool(send_deepthink),
-                                    )
-
-                # Content update: response/fragments/0/content OR fragments/0/content
+                # Content update: response/fragments/<idx>/content OR fragments/<idx>/content
                 elif item_p and (item_p.startswith("response/fragments/") or item_p.startswith("fragments/")) and item_p.endswith("/content"):
                     self._remember_active_fragment(item_p)
+
+                    # If content arrives for fragment index > 0 while thinking was active,
+                    # the model has transitioned from thinking to the actual response
+                    if frag_idx is not None and frag_idx > 0 and getattr(self, "thinking_active", False):
+                        if send_deepthink:
+                            content += "</think>"
+                        self.thinking_active = False
+                        self._stream_active_fragment_type = "RESPONSE"
+                        self._store_fragment_type(frag_idx, "RESPONSE")
+
                     content += self._append_stream_text(
                         item_v,
                         send_deepthink=bool(send_deepthink),
                     )
-                        
-                # Status update: response/fragments/0/status
+
+                # Status update: response/fragments/<idx>/status
                 elif item_p and (item_p.startswith("response/fragments/") or item_p.startswith("fragments/")) and item_p.endswith("/status"):
                     self._remember_active_fragment(item_p)
                     if item_v == "FINISHED":
-                        pass
+                        # If the finished fragment was THINK, or thinking is active on fragment 0:
+                        resolved_type = self._resolve_fragment_type_for_path(item_p)
+                        if (resolved_type == "THINK" or frag_idx == 0) and getattr(self, "thinking_active", False):
+                            if send_deepthink:
+                                content += "</think>"
+                            self.thinking_active = False
 
             if should_stop_processing:
                 pass
@@ -1965,393 +2029,236 @@ class DeepSeekDriver(BaseDriver):
         else:
             Logger.debug(f"Search is already {state}.")
 
-    def _model_type_picker_label(self, picker_kind: str) -> str:
-        return self.MODEL_TYPE_PICKER_LABELS.get(picker_kind, str(picker_kind or "unknown"))
-
     @staticmethod
-    def _format_picker_error(exc: Exception) -> str:
-        name = exc.__class__.__name__
-        detail = str(exc or "").strip().splitlines()
-        if not detail:
-            return name
-        return f"{name}: {detail[0][:200]}"
+    def _model_type_display_name(model_type: str) -> str:
+        return "DeepSeek"
 
     @staticmethod
     def _model_type_from_display_text(text: str) -> Optional[str]:
-        normalized = str(text or "").strip().lower()
-        if "expert" in normalized:
-            return DEEPSEEK_MODEL_TYPE_EXPERT
-        if "instant" in normalized:
-            return DEEPSEEK_MODEL_TYPE_DEFAULT
-        return None
-
-    @staticmethod
-    def _model_type_display_name(model_type: str) -> str:
-        normalized = str(model_type or "").strip().lower()
-        if normalized == DEEPSEEK_MODEL_TYPE_EXPERT:
-            return "Expert"
-        if normalized == "vision":
-            return "Vision"
-        return "Instant"
+        return DEEPSEEK_MODEL_TYPE_DEFAULT
 
     async def _read_visible_model_type(self) -> Optional[str]:
-        if not self.page:
-            return None
-
-        label = self.page.locator("span._46a12ab")
-        try:
-            if await label.count() == 0:
-                return None
-            text = await label.first.text_content(timeout=1000)
-        except Exception:
-            return None
-
-        return self._model_type_from_display_text(str(text or ""))
-
-    def _model_type_option_selector(self, picker_kind: str, model_type: str) -> str:
-        normalized = str(model_type or "").strip().lower()
-        if picker_kind == self.MODEL_TYPE_PICKER_NEW:
-            # For Instant, try multiple possible data-model-type values
-            if normalized in (DEEPSEEK_MODEL_TYPE_DEFAULT, "instant", "instant-v3"):
-                # Create selector that matches any of the possible instant values
-                return "div[role='radiogroup'] div[role='radio'][data-model-type='default'], div[role='radiogroup'] div[role='radio'][data-model-type='instant'], div[role='radiogroup'] div[role='radio'][data-model-type='instant-v3']"
-            return f"div[role='radiogroup'] div[role='radio'][data-model-type='{normalized}']"
-        return f"div._9f2341b._7ac2123[data-model-type='{normalized}']"
-
-    async def _has_visible_model_type_option(self, picker_kind: str, model_type: str) -> bool:
-        selector = self._model_type_option_selector(picker_kind, model_type)
-        return await self._has_visible_selector([selector])
+        return None
 
     async def _detect_model_type_picker_kind(self, *, log_result: bool = False) -> Optional[str]:
-        if not self.page:
-            return None
-
-        previous_kind = self._deepseek_model_type_picker_kind
-        detected_kind: Optional[str] = None
-        for picker_kind in self.MODEL_TYPE_PICKER_ORDER:
-            # Base required types for the picker
-            required_types = [
-                DEEPSEEK_MODEL_TYPE_DEFAULT,
-                DEEPSEEK_MODEL_TYPE_EXPERT,
-            ]
-            if picker_kind == self.MODEL_TYPE_PICKER_NEW:
-                # Vision identifies the new rollout; also check for alternative instant values
-                required_types.append("vision")
-                # Also accept alternative instant values that some rollouts might use
-                required_types.extend(["instant", "instant-v3"])
-
-            has_all_options = True
-            for model_type in required_types:
-                if not await self._has_visible_model_type_option(picker_kind, model_type):
-                    has_all_options = False
-                    break
-            if has_all_options:
-                detected_kind = picker_kind
-                break
-
-        self._deepseek_model_type_picker_kind = detected_kind
-        if log_result:
-            if detected_kind:
-                label = self._model_type_picker_label(detected_kind)
-                if detected_kind != previous_kind:
-                    Logger.debug(f"DeepSeek model type picker detected: {label}.")
-            else:
-                Logger.debug(
-                    "DeepSeek model type picker was not detected at startup. "
-                    "It will be checked again before sending requests."
-                )
-        return detected_kind
-
-    def _model_type_picker_attempt_order(self) -> List[str]:
-        attempts: List[str] = []
-        current = self._deepseek_model_type_picker_kind
-        if current in self.MODEL_TYPE_PICKER_ORDER:
-            attempts.append(current)
-        for picker_kind in self.MODEL_TYPE_PICKER_ORDER:
-            if picker_kind not in attempts:
-                attempts.append(picker_kind)
-        return attempts
-
-    async def _is_model_type_option_selected(self, option) -> bool:
-        aria_checked = await option.get_attribute("aria-checked")
-        if aria_checked is not None:
-            return str(aria_checked or "").strip().lower() == "true"
-
-        class_attr = await option.get_attribute("class") or ""
-        return "_31a22b0" in class_attr
-
-    async def _try_set_model_type_with_picker(
-        self,
-        picker_kind: str,
-        desired_type: str,
-    ) -> tuple[bool, str]:
-        selector = self._model_type_option_selector(picker_kind, desired_type)
-        label = self._model_type_picker_label(picker_kind)
-        option = self.page.locator(selector)
-        display_name = self._model_type_display_name(desired_type)
-
-        try:
-            await option.first.wait_for(state="visible", timeout=4000)
-        except Exception as exc:
-            reason = self._format_picker_error(exc)
-            return False, f"{label}: {display_name} option was not visible ({reason})"
-
-        try:
-            disabled = str(await option.first.get_attribute("aria-disabled") or "").strip().lower()
-            if disabled == "true":
-                return False, f"{label}: {display_name} option was disabled"
-
-            if await self._is_model_type_option_selected(option.first):
-                Logger.debug(f"DeepSeek model type is already '{desired_type}' via {label}.")
-                return True, f"{label}: already selected"
-
-            Logger.debug(f"Switching DeepSeek model type to '{desired_type}' via {label}...")
-            await option.first.click(timeout=2000)
-        except Exception as exc:
-            reason = self._format_picker_error(exc)
-            return False, f"{label}: {display_name} click failed ({reason})"
-
-        try:
-            await self.page.wait_for_function(
-                """
-                ([selector, selectedClass]) => {
-                    const option = document.querySelector(selector);
-                    if (!option) return false;
-                    const ariaChecked = option.getAttribute('aria-checked');
-                    if (ariaChecked !== null) {
-                        return ariaChecked.toLowerCase() === 'true';
-                    }
-                    return option.classList.contains(selectedClass);
-                }
-                """,
-                arg=[selector, "_31a22b0"],
-                timeout=3000,
-            )
-        except Exception as exc:
-            reason = self._format_picker_error(exc)
-            Logger.debug(
-                f"DeepSeek model type '{desired_type}' click completed via {label}, "
-                "but selection confirmation timed out."
-            )
-            return False, f"{label}: {display_name} click did not confirm ({reason})"
-
-        return True, f"{label}: clicked"
+        return None
 
     async def set_model_type_state(self, model_type: str) -> None:
-        desired_type = (
-            DEEPSEEK_MODEL_TYPE_EXPERT
-            if str(model_type or "").strip().lower() == DEEPSEEK_MODEL_TYPE_EXPERT
-            else DEEPSEEK_MODEL_TYPE_DEFAULT
-        )
-
-        if not self.page:
-            return
-
-        if self._deepseek_model_type_picker_kind is None:
-            await self._detect_model_type_picker_kind()
-
-        previous_kind = self._deepseek_model_type_picker_kind
-        failures: List[str] = []
-        for picker_kind in self._model_type_picker_attempt_order():
-            success, detail = await self._try_set_model_type_with_picker(picker_kind, desired_type)
-            if success:
-                self._deepseek_model_type_picker_kind = picker_kind
-                if previous_kind and picker_kind != previous_kind:
-                    Logger.warning(
-                        "DeepSeek model type picker recovered with "
-                        f"{self._model_type_picker_label(picker_kind)} after "
-                        f"{self._model_type_picker_label(previous_kind)} failed."
-                    )
-                return
-            failures.append(detail)
-
-        tried = "; ".join(failures) if failures else "no picker attempts were available"
-        Logger.warning(
-            f"DeepSeek model type '{desired_type}' could not be applied. "
-            f"Tried: {tried}. Continuing with the current DeepSeek mode."
-        )
+        """DeepSeek web UI no longer uses model picker radios; no-op."""
+        return
 
     async def set_sidebar_status(self, open: bool):
         """
-        Sets the sidebar status to open or closed.
+        Sets the sidebar status to open or closed using resilient text and icon selectors.
         """
-        # Sidebar visibility is controlled via hashed classes that DeepSeek changes frequently.
-        # when hidden, the sidebar container gains "a02af2e6" (removed when visible).
+        if not self.page:
+            return
 
-        sidebar_wrapper_selector = "div.dc04ec1d"
-        sidebar_hidden_class = "a02af2e6"
-        close_button_selector = "div.ds-icon-button._7d1f5e2"
-        open_button_selector = "div.e5bf614e >> div.ds-icon-button._4f3769f >> nth=0"
-
-        async def _is_sidebar_hidden() -> Optional[bool]:
-            wrapper = self.page.locator(sidebar_wrapper_selector)
-            if await wrapper.count() > 0:
-                class_attr = await wrapper.first.get_attribute("class") or ""
-                return sidebar_hidden_class in class_attr
-
-            # Fallback heuristics if wrapper selector changes.
-            close_btn = self.page.locator(close_button_selector)
-            if await close_btn.count() > 0 and await close_btn.first.is_visible():
-                return False
-
-            open_btn = self.page.locator(open_button_selector)
-            if await open_btn.count() > 0 and await open_btn.first.is_visible():
-                return True
-
-            return None
-
-        is_hidden = await _is_sidebar_hidden()
-
-        if open:
-            if is_hidden is False:
-                Logger.debug("Sidebar is already open.")
-                return
-
-            Logger.debug("Opening sidebar...")
-            open_btn = self.page.locator(open_button_selector)
-            if await open_btn.count() == 0:
-                Logger.warning("Open sidebar button not found.")
-                return
-
+        async def _is_sidebar_open() -> bool:
             try:
-                await open_btn.click(timeout=2000)
-            except Exception as e:
-                Logger.warning(f"Failed to click open sidebar button: {e}")
-                return
-
-        else:
-            if is_hidden is True:
-                Logger.debug("Sidebar is already closed.")
-                return
-
-            Logger.debug("Closing sidebar...")
-            close_btn = self.page.locator(close_button_selector)
-            if await close_btn.count() == 0:
-                Logger.warning("Close sidebar button not found.")
-                return
-
-            try:
-                await close_btn.click(timeout=2000)
-            except Exception as e:
-                Logger.warning(f"Failed to click close sidebar button: {e}")
-                return
-
-    async def click_new_chat(self, source: str = "auto"):
-        """
-        Clicks the New Chat button.
-        """
-        # DeepSeek changes their UI classes often; still relying on hashes because the structure is messed up.
-        # Sidebar open: "New chat" is a text button.
-        # Sidebar closed: quick actions show 2 icon buttons.
-        # Note: quick actions are removed from DOM when sidebar is open. The sidebar is NOT removed when closed, it just gets a new class.
-
-        sidebar_wrapper_selector = "div.dc04ec1d"
-        sidebar_hidden_class = "a02af2e6"
-        quick_action_container_selector = "div.e5bf614e"
-        quick_action_button_class = "_4f3769f"
-        sidebar_new_chat_selector = "div._5a8ac7a.a084f19e"
-
-        quick_new_chat_selector = (
-            f"{quick_action_container_selector} >> div.ds-icon-button.{quick_action_button_class} >> nth=1"
-        )
-
-        async def _is_sidebar_hidden() -> Optional[bool]:
-            wrapper = self.page.locator(sidebar_wrapper_selector)
-            if await wrapper.count() > 0:
-                class_attr = await wrapper.first.get_attribute("class") or ""
-                return sidebar_hidden_class in class_attr
-
-            # Fallback heuristics if wrapper selector changes.
-            close_btn = self.page.locator("div.ds-icon-button._7d1f5e2")
-            if await close_btn.count() > 0 and await close_btn.first.is_visible():
-                return False
-
-            quick_actions = self.page.locator(quick_action_container_selector)
-            if await quick_actions.count() > 0 and await quick_actions.first.is_visible():
-                return True
-
-            return None
-
-        async def _click_sidebar_new_chat() -> bool:
-            btn = self.page.locator(sidebar_new_chat_selector)
-            if await btn.count() > 0 and await btn.first.is_visible():
-                is_disabled = (await btn.first.get_attribute("aria-disabled")) == "true"
-                if not is_disabled:
-                    Logger.debug("Clicking New Chat (Sidebar)...")
-                    await btn.first.click(timeout=2000)
-                    return True
-
-            # Fallback: locate by visible text
-            btn = self.page.locator("div[tabindex='0']", has_text="New chat")
-            if await btn.count() > 0 and await btn.first.is_visible():
-                Logger.debug("Clicking New Chat (Sidebar text)...")
-                await btn.first.click(timeout=2000)
-                return True
-
-            return False
-
-        async def _click_quick_new_chat() -> bool:
-            btn = self.page.locator(quick_new_chat_selector)
-            if await btn.count() > 0 and await btn.first.is_visible():
-                is_disabled = (await btn.first.get_attribute("aria-disabled")) == "true"
-                if not is_disabled:
-                    Logger.debug("Clicking New Chat (Quick action)...")
-                    await btn.first.click(timeout=2000)
-                    return True
+                for sel in [
+                    "button:has-text('New chat')",
+                    "div[role='button']:has-text('New chat')",
+                    ".ds-button:has-text('New chat')",
+                    "text='New chat'",
+                    "text='New Chat'",
+                ]:
+                    loc = self.page.locator(sel)
+                    cnt = await loc.count()
+                    for i in range(cnt):
+                        if await loc.nth(i).is_visible():
+                            return True
+            except Exception:
+                pass
             return False
 
         try:
-            if source == "sidebar":
-                if not await _click_sidebar_new_chat():
-                    Logger.warning("New Chat (Sidebar) button not found.")
+            is_open = await _is_sidebar_open()
+            if open and is_open:
+                Logger.debug("Sidebar is already open.")
+                return
+            if (not open) and (not is_open):
+                Logger.debug("Sidebar is already closed.")
                 return
 
-            if source == "simple":
-                if not await _click_quick_new_chat():
-                    Logger.warning("New Chat (Quick action) button not found.")
-                return
-
-            if source != "auto":
-                Logger.warning(f"Unknown source: {source}")
-                return
-
-            Logger.debug("Attempting to click New Chat (Auto)...")
-            is_hidden = await _is_sidebar_hidden()
-
-            # If sidebar is open, quick actions are removed; prefer the sidebar button.
-            if is_hidden is False:
-                if await _click_sidebar_new_chat():
-                    return
-                # If our state detection is wrong or UI changed, try quick action as a fallback.
-                if await _click_quick_new_chat():
-                    return
-                Logger.warning("Sidebar appears open, but New Chat button was not found.")
-                return
-
-            # If sidebar is hidden, quick actions should exist; prefer quick action.
-            if is_hidden is True:
-                if await _click_quick_new_chat():
-                    return
-                # Fallback: open sidebar and try the sidebar button.
-                await self.set_sidebar_status(open=True)
-                if await _click_sidebar_new_chat():
-                    return
-                Logger.warning("Sidebar appears hidden, but New Chat button was not found.")
-                return
-
-            # Unknown state: try both, then try opening sidebar as a last resort.
-            if await _click_quick_new_chat():
-                return
-            if await _click_sidebar_new_chat():
-                return
-
-            await self.set_sidebar_status(open=True)
-            if await _click_sidebar_new_chat():
-                return
-
-            Logger.warning("Could not find New Chat button in either mode.")
+            # Toggle the sidebar
+            clicked = await self.page.evaluate('''() => {
+                const buttons = Array.from(document.querySelectorAll('.ds-icon-button, button, div[role="button"]'));
+                // Check aria-label / title
+                for (const b of buttons) {
+                    const aria = (b.getAttribute('aria-label') || '').toLowerCase();
+                    const title = (b.getAttribute('title') || '').toLowerCase();
+                    if (aria.includes('sidebar') || title.includes('sidebar') || aria.includes('collapse') || aria.includes('expand') || aria.includes('menu')) {
+                        const rect = b.getBoundingClientRect();
+                        if (rect.width > 0 && rect.height > 0) {
+                            b.click();
+                            return true;
+                        }
+                    }
+                }
+                // Fallback: the leftmost ds-icon-button in the top header
+                const headerButtons = buttons.filter(b => {
+                    const r = b.getBoundingClientRect();
+                    return r.top >= 0 && r.top < 80 && r.left < 200 && r.width > 0 && r.height > 0;
+                });
+                if (headerButtons.length > 0) {
+                    headerButtons[0].click();
+                    return true;
+                }
+                return false;
+            }''')
+            if clicked:
+                await asyncio.sleep(0.3)
         except Exception as e:
-            Logger.error(f"Error clicking New Chat: {e}")
+            Logger.debug(f"DeepSeek: set_sidebar_status ignored: {e}")
+
+    async def click_new_chat(self, source: str = "auto"):
+        """
+        Starts a new chat session.
+        Handles both collapsed sidebar (default: icon-only capsule in top-left)
+        and expanded sidebar (pill button with text 'New chat').
+        Verifies reset via URL and falls back to home navigation if needed.
+        """
+        if not self.page:
+            return
+
+        Logger.debug(f"DeepSeek: Preparing new chat session (source={source})...")
+
+        def _is_in_chat_session() -> bool:
+            try:
+                url = str(self.page.url or "")
+                return bool(self._parse_conversation_info_from_url(url))
+            except Exception:
+                return False
+
+        # Strategy 1: Check for visible 'New chat' text button (active when sidebar is open)
+        text_selectors = [
+            "button:has-text('New chat')",
+            "div[role='button']:has-text('New chat')",
+            ".ds-button:has-text('New chat')",
+            "a:has-text('New chat')",
+            "div[tabindex='0']:has-text('New chat')",
+            "text='New chat'",
+            "text='New Chat'",
+        ]
+        for sel in text_selectors:
+            try:
+                loc = self.page.locator(sel)
+                cnt = await loc.count()
+                for i in range(cnt):
+                    el = loc.nth(i)
+                    if await el.is_visible():
+                        text = (await el.text_content() or "").strip()
+                        if len(text) > 50:
+                            continue
+                        Logger.debug(f"DeepSeek: Clicking visible New Chat button via {sel}")
+                        await el.click(timeout=2000)
+                        await asyncio.sleep(0.4)
+                        if not _is_in_chat_session():
+                            Logger.info("DeepSeek: Started new chat via sidebar button.")
+                            return
+            except Exception:
+                pass
+
+        # Strategy 2: Sidebar is closed (default state).
+        # In the top-left navigation capsule next to the logo, there are 3 icon buttons:
+        # [0] = Sidebar toggle, [1] = Search, [2] = New chat (tooltip 'New chat').
+        # Use page.evaluate to find the New chat button either by tooltip/aria or by position in the capsule.
+        try:
+            clicked_icon = await self.page.evaluate('''() => {
+                // Check aria-label / title / tooltip matching 'new chat'
+                const buttons = Array.from(document.querySelectorAll('.ds-icon-button, button, div[role="button"], div[tabindex="0"], a'));
+                for (const el of buttons) {
+                    const aria = (el.getAttribute('aria-label') || '').toLowerCase();
+                    const title = (el.getAttribute('title') || '').toLowerCase();
+                    const tooltip = (el.getAttribute('data-tooltip') || '').toLowerCase();
+                    if (aria.includes('new chat') || title.includes('new chat') || tooltip.includes('new chat')) {
+                        const rect = el.getBoundingClientRect();
+                        if (rect.width > 0 && rect.height > 0) {
+                            el.click();
+                            return 'aria_or_title';
+                        }
+                    }
+                }
+
+                // If not found by attribute, inspect top-left header capsule (y < 80, x < 250)
+                const topButtons = buttons.filter(el => {
+                    const r = el.getBoundingClientRect();
+                    return r.top >= 0 && r.top < 80 && r.left > 20 && r.left < 250 && r.width > 0 && r.height > 0;
+                });
+
+                // In the capsule:
+                // If >= 2 buttons: the last button is the New Chat button
+                if (topButtons.length >= 2) {
+                    const newChatBtn = topButtons[topButtons.length - 1];
+                    newChatBtn.click();
+                    return 'top_capsule_last_button';
+                }
+
+                return null;
+            }''')
+            if clicked_icon:
+                Logger.debug(f"DeepSeek: Clicked New Chat icon button ({clicked_icon}).")
+                await asyncio.sleep(0.4)
+                if not _is_in_chat_session():
+                    Logger.info("DeepSeek: Started new chat via top-left icon button.")
+                    return
+        except Exception as e:
+            Logger.debug(f"DeepSeek: Error clicking top-left icon button: {e}")
+
+        # Strategy 3: Open sidebar and then click the 'New chat' button
+        try:
+            Logger.debug("DeepSeek: Attempting to open sidebar to click New chat...")
+            await self.set_sidebar_status(open=True)
+            await asyncio.sleep(0.3)
+            for sel in text_selectors:
+                loc = self.page.locator(sel)
+                cnt = await loc.count()
+                for i in range(cnt):
+                    el = loc.nth(i)
+                    if await el.is_visible():
+                        await el.click(timeout=2000)
+                        await asyncio.sleep(0.4)
+                        if not _is_in_chat_session():
+                            Logger.info("DeepSeek: Opened sidebar and started new chat.")
+                            return
+        except Exception as e:
+            Logger.debug(f"DeepSeek: Error opening sidebar for new chat: {e}")
+
+        # Strategy 4: Click the DeepSeek whale logo / home link
+        try:
+            clicked_logo = await self.page.evaluate('''() => {
+                const candidates = Array.from(document.querySelectorAll('a[href="/"], .ds-logo, header a, div[role="button"]'));
+                for (const el of candidates) {
+                    const r = el.getBoundingClientRect();
+                    if (r.top >= 0 && r.top < 80 && r.left < 100 && r.width > 0 && r.height > 0) {
+                        el.click();
+                        return true;
+                    }
+                }
+                return false;
+            }''')
+            if clicked_logo:
+                Logger.debug("DeepSeek: Clicked logo to reset chat.")
+                await asyncio.sleep(0.5)
+                if not _is_in_chat_session():
+                    Logger.info("DeepSeek: Started new chat via logo click.")
+                    return
+        except Exception as e:
+            Logger.debug(f"DeepSeek: Error clicking logo: {e}")
+
+        # Strategy 5: Guaranteed URL fallback
+        # Navigate directly to https://chat.deepseek.com/
+        try:
+            Logger.info("DeepSeek: Navigating to https://chat.deepseek.com/ to ensure fresh new chat session...")
+            await self.page.goto("https://chat.deepseek.com/", wait_until="domcontentloaded", timeout=15000)
+            try:
+                await self.page.wait_for_selector("textarea", timeout=8000)
+            except Exception:
+                pass
+            Logger.info("DeepSeek: Fresh new chat session ready.")
+        except Exception as e:
+            Logger.error(f"DeepSeek: Error navigating to New Chat URL: {e}")
 
     async def enter_message(self, message: str):
         """

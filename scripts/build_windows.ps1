@@ -47,6 +47,9 @@ $pyinstallerArgs = @(
   "--collect-all", "patchright"
   "--collect-all", "playwright"
   "--collect-all", "desktop_notifier"
+  "--collect-all", "h2"
+  "--collect-all", "hpack"
+  "--collect-all", "hyperframe"
   $EntryPoint
 )
 

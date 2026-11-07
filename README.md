@@ -123,7 +123,6 @@ Once the app says **Running (Port 7777)**:
   - `mimo-reasoner` (thinking mode)
 - **DeepSeek**:
   - `deepseek-auto`, `deepseek-chat`, `deepseek-reasoner`
-  - `deepseek-expert-auto`, `deepseek-expert-chat`, `deepseek-expert-reasoner`
 - **Google AI Studio**:
   - `aistudio-auto`, `aistudio-chat`, `aistudio-reasoner` (Gemini 3.8 / 3.7 / 3.6 / 2.5)
 - **GLM Chat (Z.ai)**:
@@ -146,7 +145,7 @@ Once the app says **Running (Port 7777)**:
 |---|---|---|
 | <img src=".github/svgs/providers/aistudio.svg" width="18" alt=""> **Google AI Studio** | 🟢 Active | Gemini 3.8 Flash, 3.7 Flash, 3.6 Flash, Thinking Levels, Search context |
 | <img src=".github/svgs/providers/zai.svg" width="18" alt=""> **Xiaomi MiMo** | 🟢 Active | MiMo-V2.6-Pro, MiMo-V2.6-Flash, auto-fallback for retired 2.5 |
-| <img src=".github/svgs/providers/deepseek.svg" width="18" alt=""> **DeepSeek** | 🟢 Active | DeepThink, Search, Expert Mode, uploads, chat reuse |
+| <img src=".github/svgs/providers/deepseek.svg" width="18" alt=""> **DeepSeek** | 🟢 Active | DeepThink, Search, uploads, chat reuse |
 | <img src=".github/svgs/providers/zai.svg" width="18" alt=""> **GLM Chat (Z.ai)** | 🟢 Active | GLM-5.3, GLM-5.3-Flash, GLM-5.2, Thinking levels (Low/High/Max), Search |
 | <img src=".github/svgs/providers/qwen.svg" width="18" alt=""> **Alibaba Qwen** | 🟢 Active | Qwen3.8-Max, Qwen3.8-Omni-Flash, Qwen3.7 series, Web Search, Thinking |
 | <img src=".github/svgs/providers/moonshot.svg" width="18" alt=""> **Kimi / Moonshot** | 🟡 Usable | Thinking, Search, file uploads, Google login |

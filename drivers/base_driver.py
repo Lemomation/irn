@@ -1632,8 +1632,15 @@ class BaseDriver(ABC):
             except Exception:
                 pass
             proxy_url = raw_proxy or None
+            http2_enabled = False
             try:
-                transport = httpx.AsyncHTTPTransport(retries=3, http2=True, proxy=proxy_url)
+                import h2  # noqa: F401
+                http2_enabled = True
+            except ImportError:
+                http2_enabled = False
+
+            try:
+                transport = httpx.AsyncHTTPTransport(retries=3, http2=http2_enabled, proxy=proxy_url)
                 client = httpx.AsyncClient(transport=transport)
             except Exception:
                 client = httpx.AsyncClient()
