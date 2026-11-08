@@ -1,8 +1,8 @@
 {
-  "version": "2.9.6-patch",
+  "version": "2.9.6-rev1",
   "aua": true,
   "severity": 3,
   "pu": "none",
   "pufref": "none",
-  "summary": "DeepSeek: Fixed 'h2' missing module error, resolved new chat session resetting, fixed reasoning mode response capture, and pruned obsolete expert models"
+  "summary": "GLM Chat: Updated for new UI with multi-level thinking controls (Low/High/Max for GLM-5.3/GLM-5.3-Flash, High/Max for GLM-5.2), auto-dismissal of promotional modals, and removed obsolete DeepThink/Search warnings"
 }

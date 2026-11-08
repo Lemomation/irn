@@ -1266,6 +1266,16 @@ class SettingsWindow(QMainWindow):
         options = [str(option) for option in (field.options or [])]
         if category_key == "providers_credentials" and field.key == "provider":
             return provider_options(include_locked=False, config_manager=self.config_manager)
+        if category_key == "glm_behavior" and field.key == "deepthink_effort":
+            current_model = ""
+            model_widget = self.field_widgets.get("glm_behavior.model")
+            if model_widget is not None and hasattr(model_widget, "currentText"):
+                current_model = model_widget.currentText().strip()
+            if not current_model:
+                current_model = str(self.config_manager.get_setting("glm_behavior", "model") or "").strip()
+            if current_model.lower() == "glm-5.2":
+                return ["High", "Max"]
+            return ["Low", "High", "Max"]
         if category_key == "huggingchat_behavior" and field.key == "model":
             unavailable = "Model list unavailable, please successfully log into HuggingChat at least once"
             try:
@@ -1338,6 +1348,8 @@ class SettingsWindow(QMainWindow):
                 widget.setCurrentText(current_text)
             elif saved_value and widget.findText(saved_value) >= 0:
                 widget.setCurrentText(saved_value)
+            elif options:
+                widget.setCurrentText(str(options[0]))
         finally:
             widget.blockSignals(False)
 
@@ -4580,6 +4592,10 @@ class SettingsWindow(QMainWindow):
             model_field = self.field_defs.get(f"{category_key}.model")
             if model_field:
                 QTimer.singleShot(0, lambda c=category_key, f=model_field: self._refresh_dropdown_options_for_field(c, f))
+        elif full_key == "glm_behavior.model":
+            effort_field = self.field_defs.get("glm_behavior.deepthink_effort")
+            if effort_field:
+                QTimer.singleShot(0, lambda: self._refresh_dropdown_options_for_field("glm_behavior", effort_field))
         if full_key and self._is_loadout_controlled_full_key(full_key):
             field_def = self.field_defs.get(full_key)
             if field_def is not None:

@@ -129,7 +129,7 @@ class GLMDriver(BaseDriver):
     MODEL_DROPDOWN_SELECTOR = f"div#{MODEL_DROPDOWN_ID}"
     MODEL_OPTION_SELECTOR = "button[aria-label='model-item'][data-value], div[role='menu'] button[data-value]"
     MODEL_DATA_VALUE_BY_FRIENDLY: Dict[str, str] = {
-        "GLM-5.3-Flash": "glm-5.3-flash",
+        "GLM-5.3-Flash": "x-preview-l",
         "GLM-5.3": "glm-5.3",
         "GLM-5.2": "glm-5.2",
         "GLM-5.1": "GLM-5.1",
@@ -370,14 +370,8 @@ class GLMDriver(BaseDriver):
             Logger.debug(f"GLM Chat: failed to register CAPTCHA observer: {e}")
 
     async def _handle_captcha_resource_route(self, route: Any) -> None:
-        now = time.time()
-        if (now - getattr(self, "_last_captcha_notice_ts", 0.0)) > 30.0:
-            self._last_captcha_notice_ts = now
-            Logger.warning(
-                "GLM Chat: CAPTCHA challenge resources are loading (FeiLin). "
-                "If a verification popup appears, solve it in the GLM browser window."
-            )
-
+        # Static FeiLin CAPTCHA SDK script assets are pre-loaded by GLM on page load.
+        # Do not warn unless a real verification challenge error code is returned.
         try:
             await route.continue_()
         except Exception:
@@ -453,19 +447,30 @@ class GLMDriver(BaseDriver):
         }
 
     @classmethod
-    def _normalize_glm_deepthink_effort(cls, value: Any, default: str | None = None) -> str:
+    def _normalize_glm_deepthink_effort(
+        cls,
+        value: Any,
+        default: str | None = None,
+        model_friendly: str | None = None,
+    ) -> str:
         fallback = str(default or cls.DEFAULT_GLM_52_DEEPTHINK_EFFORT).strip().lower()
         normalized = str(value or "").strip().lower()
         normalized = re.sub(r"[\s_]+", "-", normalized)
         normalized = re.sub(r"-{2,}", "-", normalized).strip("-")
 
         if normalized in {"max", "maximum", "xhigh", "x-high", "extra-high", "extra-highest"}:
-            return "max"
-        if normalized in {"high", "medium", "med"}:
-            return "high"
-        if normalized in {"low", "min", "minimum"}:
-            return "low"
-        return fallback if fallback in {"low", "high", "max"} else cls.DEFAULT_GLM_52_DEEPTHINK_EFFORT
+            chosen = "max"
+        elif normalized in {"high", "medium", "med"}:
+            chosen = "high"
+        elif normalized in {"low", "min", "minimum"}:
+            chosen = "low"
+        else:
+            chosen = fallback if fallback in {"low", "high", "max"} else cls.DEFAULT_GLM_52_DEEPTHINK_EFFORT
+
+        if model_friendly and cls._normalize_model_label(model_friendly) == cls._normalize_model_label("GLM-5.2"):
+            if chosen == "low":
+                chosen = "high"
+        return chosen
 
     def _get_request_capture_mode(self) -> str:
         try:
@@ -587,12 +592,38 @@ class GLMDriver(BaseDriver):
                             }
                         }
                     }
+
+                    // 4. Handle promotional / announcement popups (e.g. "GLM-5.1 is now available") with "Maybe Later"
+                    for (const button of document.querySelectorAll('button')) {
+                        if (button.disabled || !isVisible(button)) {
+                            continue;
+                        }
+                        const text = (button.textContent || '').trim().toLowerCase();
+                        if (text === 'maybe later' || text.includes('maybe later')) {
+                            try {
+                                button.click();
+                                clicked += 1;
+                            } catch (e) {
+                                // Ignore
+                            }
+                        }
+                    }
+
                     return clicked;
                 }"""
             )
             total_clicked += int(clicked or 0)
         except Exception as e:
             Logger.debug(f"{context}: failed to dismiss modal close buttons: {e}")
+
+        # Backup check for Maybe Later button via locator
+        try:
+            maybe_later = self.page.locator("button").filter(has_text=re.compile(r"^maybe\s+later$", re.IGNORECASE))
+            if await maybe_later.count() > 0 and await maybe_later.first.is_visible():
+                await maybe_later.first.click(timeout=1000)
+                total_clicked += 1
+        except Exception:
+            pass
 
         if total_clicked:
             Logger.debug(f"{context}: dismissed {total_clicked} dialog/modal close button(s).")
@@ -1087,6 +1118,9 @@ class GLMDriver(BaseDriver):
                 option = self.page.locator(f"button[data-value='{safe_value}']")
 
         count = await option.count()
+        if count == 0 and friendly_name:
+            option = self.page.locator("button[aria-label='model-item']").filter(has_text=friendly_name)
+            count = await option.count()
         if count == 0:
             return False
 
@@ -1380,16 +1414,16 @@ class GLMDriver(BaseDriver):
         self.ece_mark_used(email)
 
     def _resolve_deepthink_flags(self, model: str) -> tuple[bool, bool]:
-        """Resolve Deep Think from the user's configured GLM settings.
+        """Resolve Deep Think / Thinking from the user's configured GLM settings.
 
-        The model behavior mode must not silently override the user's Deep Think
-        selection. In particular, MODE_CHAT previously forced Deep Think off,
-        which caused the UI setting to be turned back off on every new request.
-        Model-specific capability is handled later by the actual UI toggle path.
+        GLM-5.2, GLM-5.3, and GLM-5.3-Flash always have reasoning/thinking mode
+        built-in on the GLM interface.
         """
-        del model  # Kept in the signature for compatibility with existing callers.
-
-        enable_deepthink = bool(self.config_manager.get_setting("glm_behavior", "enable_deepthink"))
+        resolved_label = self._normalize_model_label(model or self.current_model or self._get_configured_glm_model_friendly())
+        enable_deepthink = (
+            self._glm_uses_deepthink_effort_controls(resolved_label)
+            or bool(self.config_manager.get_setting("glm_behavior", "enable_deepthink"))
+        )
         send_deepthink = bool(self.config_manager.get_setting("glm_behavior", "send_deepthink"))
         return enable_deepthink, send_deepthink
 
@@ -1402,15 +1436,15 @@ class GLMDriver(BaseDriver):
         self,
         ui_model_label: str,
         *,
-        deepthink_enabled: bool,
+        deepthink_enabled: bool = True,
         overrides: Optional[Dict[str, Any]] = None,
     ) -> str:
-        if not (deepthink_enabled and self._glm_uses_deepthink_effort_controls(ui_model_label)):
+        if not self._glm_uses_deepthink_effort_controls(ui_model_label):
             return ""
 
         override = (overrides or {}).get("deepthink_effort")
         value = override if override is not None else self._get_configured_glm_deepthink_effort()
-        return self._normalize_glm_deepthink_effort(value)
+        return self._normalize_glm_deepthink_effort(value, model_friendly=ui_model_label)
 
     def _resolve_glm_request_settings(self, model: str, overrides: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
         resolved_model = (model or "").strip() or "glm-auto"
@@ -1584,8 +1618,10 @@ class GLMDriver(BaseDriver):
             effort=deepthink_effort,
             model_label=ui_model_label,
         )
-        await self.set_search_state(bool(enable_search))
-        await self.set_advanced_search_state(bool(enable_advanced_search))
+        if enable_search:
+            await self.set_search_state(True)
+            if enable_advanced_search:
+                await self.set_advanced_search_state(True)
         await asyncio.sleep(self._post_delay_s)
 
     async def _send_text_request(
@@ -2042,7 +2078,10 @@ class GLMDriver(BaseDriver):
         try:
             await btn.click(timeout=self._ui_timeout)
         except Exception as e:
-            Logger.warning(f"GLM Chat: failed to click New Chat: {e}")
+            try:
+                await btn.evaluate("(el) => el.click()")
+            except Exception:
+                Logger.warning(f"GLM Chat: failed to click New Chat: {e}")
 
     async def _find_composer_toggle_button(self, label_prefix: str, *, state_attr: str | None = None):
         """Find a visible composer toggle by its aria-label wrapper.
@@ -2511,40 +2550,82 @@ class GLMDriver(BaseDriver):
 
         return False
 
-    async def _set_glm_52_deepthink_state(self, state: bool, effort: str | None = None) -> None:
-        desired_enabled = bool(state)
+    async def _set_glm_effort_slider_state(
+        self,
+        effort: str | None = None,
+        model_friendly: str | None = None,
+    ) -> bool:
+        """
+        Adjust the Thinking Effort slider inside GLM's model selector dropdown.
+        Supports 3 levels (Low, High, Max) for GLM-5.3 / GLM-5.3-Flash,
+        and 2 levels (High, Max) for GLM-5.2.
+        """
+        if not self.page:
+            return False
+
         desired_effort = self._normalize_glm_deepthink_effort(
-            effort or self._get_configured_glm_deepthink_effort()
+            effort or self._get_configured_glm_deepthink_effort(),
+            model_friendly=model_friendly,
         )
 
-        trigger = await self._find_glm_52_deepthink_trigger()
-        current = await self._read_glm_52_deepthink_trigger_state(trigger)
-        if not current.get("exists"):
-            Logger.warning("GLM Chat: GLM-5.2 Deep Think control not found.")
-            return
-
-        if not desired_enabled:
-            if not current.get("enabled"):
-                return
-        elif current.get("enabled") and current.get("effort") == desired_effort:
-            return
-
-        if not await self._open_glm_52_deepthink_menu():
-            return
+        dropdown_opened_here = False
+        if not await self._is_glm_model_dropdown_open():
+            if not await self._open_glm_model_dropdown():
+                Logger.warning("GLM Chat: failed to open model dropdown to set thinking effort.")
+                return False
+            dropdown_opened_here = True
 
         try:
-            if desired_enabled:
-                if current.get("effort") != desired_effort:
-                    await self._select_glm_52_deepthink_effort(desired_effort)
-                    if not await self._open_glm_52_deepthink_menu():
-                        return
-                if not await self._read_glm_52_deepthink_switch_enabled():
-                    await self._click_glm_52_deepthink_switch()
+            res = await self.page.evaluate(
+                """async (desiredEffort) => {
+                    const slider = document.querySelector('[role="slider"][aria-label="Effort"]');
+                    if (!slider) return { ok: false, error: "slider not found" };
+
+                    const max = parseInt(slider.getAttribute('aria-valuemax') || '2', 10);
+                    let targetVal = 0;
+                    const desired = String(desiredEffort || '').toLowerCase();
+                    if (max === 1) {
+                        // 2-level model (GLM-5.2): 0 = High, 1 = Max
+                        targetVal = (desired === 'max') ? 1 : 0;
+                    } else {
+                        // 3-level model (GLM-5.3 / GLM-5.3-Flash): 0 = Low, 1 = High, 2 = Max
+                        if (desired === 'max') targetVal = 2;
+                        else if (desired === 'high') targetVal = 1;
+                        else targetVal = 0;
+                    }
+
+                    slider.focus();
+                    slider.dispatchEvent(new KeyboardEvent('keydown', { key: 'Home', code: 'Home', bubbles: true }));
+                    await new Promise(r => setTimeout(r, 60));
+
+                    for (let i = 0; i < targetVal; i++) {
+                        slider.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowRight', code: 'ArrowRight', bubbles: true }));
+                        await new Promise(r => setTimeout(r, 40));
+                    }
+
+                    return {
+                        ok: true,
+                        now: slider.getAttribute('aria-valuenow'),
+                        text: slider.getAttribute('aria-valuetext')
+                    };
+                }""",
+                desired_effort,
+            )
+            if res and res.get("ok"):
+                Logger.debug(f"GLM Chat: thinking effort set to {res.get('text')} (valuenow={res.get('now')})")
+                return True
             else:
-                if await self._read_glm_52_deepthink_switch_enabled():
-                    await self._click_glm_52_deepthink_switch()
+                Logger.debug(f"GLM Chat: effort slider evaluation result: {res}")
+        except Exception as e:
+            Logger.warning(f"GLM Chat: error adjusting effort slider: {e}")
         finally:
-            await self._close_glm_52_deepthink_menu()
+            if dropdown_opened_here:
+                await self._close_glm_model_dropdown()
+
+        return False
+
+    async def _set_glm_52_deepthink_state(self, state: bool, effort: str | None = None) -> None:
+        await self._set_glm_effort_slider_state(effort=effort, model_friendly="GLM-5.2")
 
     async def _find_search_button(self):
         """Find the Web Search button in the active GLM composer layout."""
@@ -2581,7 +2662,10 @@ class GLMDriver(BaseDriver):
             effective_model_label = self._get_configured_glm_model_friendly()
 
         if self._glm_uses_deepthink_effort_controls(effective_model_label):
-            await self._set_glm_52_deepthink_state(state, effort=effort)
+            await self._set_glm_effort_slider_state(
+                effort=effort,
+                model_friendly=effective_model_label,
+            )
             return
 
         button = await self._find_deepthink_button()
@@ -2610,7 +2694,8 @@ class GLMDriver(BaseDriver):
 
         button = await self._find_search_button()
         if not button:
-            Logger.warning("GLM Chat: Search button not found.")
+            if state:
+                Logger.warning("GLM Chat: Search button not found.")
             return
 
         is_enabled = await self._read_composer_toggle_enabled(
@@ -2625,7 +2710,8 @@ class GLMDriver(BaseDriver):
             return
 
         if not await self._click_glm_control(button, label="Search"):
-            Logger.warning("GLM Chat: failed to toggle Search.")
+            if state:
+                Logger.warning("GLM Chat: failed to toggle Search.")
 
     async def _find_advanced_search_switch(self, search_button: Any | None = None):
         """Find the Advanced Search switch that appears while Search is hovered."""
