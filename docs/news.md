@@ -8,6 +8,31 @@ icon: material/newspaper-variant-outline
 
 This page is the changelog for the latest news and updates about IntenseRP Next.
 
+## November 13, 2026 - Update 2.9.7
+
+Okay, so this update was actually one of the bigger ones, initially I just wanted to add support for Qwen 4 and dip out, but then, providers changed a few things so I had to fix it too.
+
+To start, I added proper support for **Qwen 4 Max Preview** (`Qwen4-Max-Preview`). I didn't really get the time to test how good the model is for actual RP, but I'm sure we'll have a community consensus in a few days—not to mention, it's still in preview. Also at highest thinking, it thinks a lot, like *a lot*, so if you'll be using it, don't set it to highest thinking mode. We also fixed the auth transition bug where Qwen would briefly flicker the login page and get stuck.
+
+We have also been seeing an influx of DeepSeek account bans for quite some time now; some people say it's just false positives. Even so, I added **Humanize Mouse Movements** to DeepSeek's flow, which does make the requests a bit slower, but is much harder to detect. We've also defaulted DeepSeek to **CDP Teeing** for smoother streaming.
+
+Just last night Google released new models: **Gemini 4 Carbon** and **Gemini 4 Hydrogen** in Google AI Studio. Even though Argon was pretty good for RP, I have seen people say Hydrogen is better since it's much less dry. I added support for both (including Hydrogen's new `Extra High` thinking level), and I might make Hydrogen my daily driver, though again, I have yet to test them.
+
+Finally, on the bad side, Z.ai also added usage limits to their web chat interface. To be fair, those limits are pretty lax, but it takes 1 credit for each new chat we open. So we can still use the GLM models, but much less than before. We added automatic dismissal for Z.ai's new walkthrough and promo popups so your sessions aren't blocked. I'll look into how these limits work; I don't think I'll be able to push a new update till next-to-next week (22–23 November).
+
+Anyways, that's all for today. Bye everyone and thanks for using IRN!
+
+**TL;DR**:
+- Support for **Qwen 4 Max Preview** and session login fix.
+- **Humanize Mouse Movements** and default **CDP Teeing** for DeepSeek.
+- Support for **Gemini 4 Carbon** and **Gemini 4 Hydrogen** (with `Extra High` thinking level) in Google AI Studio.
+- Auto-dismissal for Z.ai's new interface walkthrough popup.
+
+[Full Release Notes](https://github.com/Lemomation/irn/releases/tag/v2.9.7){ .md-button .md-button--primary }
+[GitHub Repository](https://github.com/Lemomation/irn){ .md-button }
+
+---
+
 ## November 3, 2026 - Update 2.9.6
 
 ### Xiaomi MiMo: UltraSpeed Mode & Stream Engine Overhaul

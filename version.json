@@ -1,8 +1,8 @@
 {
-  "version": "2.9.6-rev1",
+  "version": "2.9.7",
   "aua": true,
   "severity": 3,
   "pu": "none",
   "pufref": "none",
-  "summary": "GLM Chat: Updated for new UI with multi-level thinking controls (Low/High/Max for GLM-5.3/GLM-5.3-Flash, High/Max for GLM-5.2), auto-dismissal of promotional modals, and removed obsolete DeepThink/Search warnings"
+  "summary": "Added support for Qwen 4 Max Preview, Google AI Studio's Gemini 4 Carbon and Hydrogen, DeepSeek Humanize Mouse Movements (with default CDP Teeing), and auto-dismissal for Z.ai's new interface walkthrough modal"
 }
