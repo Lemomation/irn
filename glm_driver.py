@@ -499,7 +499,8 @@ class GLMDriver(BaseDriver):
 
         total_clicked = 0
 
-        # 1. Original: buttons with data-dialog-close
+        # 1. First, check for walkthrough / promo / onboarding modals (e.g. "A fresh new interface", "GLM-5.1 is now available")
+        # and general dialog close buttons via in-page evaluation
         try:
             clicked = await self.page.evaluate(
                 """() => {
@@ -516,96 +517,79 @@ class GLMDriver(BaseDriver):
                     };
 
                     let clicked = 0;
-                    for (const button of document.querySelectorAll('button[data-dialog-close]')) {
-                        if (button.disabled || !isVisible(button)) {
-                            continue;
+
+                    // A. Check for "A fresh new interface" or walkthrough/onboarding modals
+                    const bodyText = (document.body ? document.body.innerText : '') || '';
+                    const hasWalkthrough = bodyText.includes('A fresh new interface') ||
+                                           bodyText.includes('fresh new interface') ||
+                                           bodyText.includes('Everyday capabilities now live in one place');
+
+                    // B. Identify all dialog/modal containers
+                    const dialogContainers = Array.from(document.querySelectorAll(
+                        'div[role="dialog"], div[data-dialog-content], div[data-state="open"], ' +
+                        'div._modal-overlay, div[class*="modal-overlay"], div[class*="Modal"], ' +
+                        'div[class*="Dialog"], div.fixed.inset-0'
+                    )).filter(isVisible);
+
+                    for (const container of dialogContainers) {
+                        const dlgRect = container.getBoundingClientRect();
+                        if (dlgRect.width < 100 || dlgRect.height < 100) continue;
+
+                        const buttons = Array.from(container.querySelectorAll('button')).filter(isVisible);
+                        for (const button of buttons) {
+                            if (button.disabled) continue;
+
+                            const btnRect = button.getBoundingClientRect();
+                            const ariaLabel = (button.getAttribute('aria-label') || '').toLowerCase();
+                            const btnText = (button.textContent || '').trim().toLowerCase();
+                            const hasSvg = !!button.querySelector('svg');
+                            const className = (button.className || '').toString().toLowerCase();
+
+                            // Top-right close button (like the circular 'X' button in the header)
+                            const isTopRight = (btnRect.right >= dlgRect.right - 90) && (btnRect.top <= dlgRect.top + 90);
+                            const isCloseIcon = isTopRight && (hasSvg || btnText === '' || btnText === '×' || btnText === '✕' || btnText === 'x');
+
+                            const isCloseAria = ariaLabel.includes('close') || ariaLabel.includes('dismiss');
+                            const isCloseClass = className.includes('close') || className.includes('dismiss');
+                            const isDataDialogClose = button.hasAttribute('data-dialog-close');
+                            const isSrOnlyClose = Array.from(button.querySelectorAll('.sr-only, span')).some(s => {
+                                const t = (s.textContent || '').trim().toLowerCase();
+                                return t === 'close' || t === 'dismiss';
+                            });
+
+                            if (isCloseIcon || isCloseAria || isCloseClass || isDataDialogClose || isSrOnlyClose) {
+                                try {
+                                    button.click();
+                                    clicked += 1;
+                                    break;
+                                } catch (e) {}
+                            }
                         }
+                    }
+
+                    // C. Fallback: buttons with data-dialog-close anywhere
+                    for (const button of document.querySelectorAll('button[data-dialog-close]')) {
+                        if (button.disabled || !isVisible(button)) continue;
                         try {
                             button.click();
                             clicked += 1;
-                        } catch (e) {
-                            // Ignore one bad close button; the next UI action will retry.
-                        }
-                    }
-                    return clicked;
-                }"""
-            )
-            total_clicked = int(clicked or 0)
-        except Exception as e:
-            Logger.debug(f"{context}: failed to dismiss data-dialog-close buttons: {e}")
-
-        # 2. Handle modal overlays with data-dialog-overlay (dismiss by pressing Escape)
-        try:
-            await self.page.evaluate(
-                """() => {
-                    const overlays = document.querySelectorAll('[data-dialog-overlay][data-state="open"]');
-                    for (const overlay of overlays) {
-                        // Try pressing Escape to close
-                        const event = new KeyboardEvent('keydown', { key: 'Escape', bubbles: true });
-                        document.dispatchEvent(event);
-                    }
-                }"""
-            )
-        except Exception as e:
-            Logger.debug(f"{context}: failed to dismiss dialog overlays via Escape: {e}")
-
-        # 3. Handle modal overlays with close buttons that don't have data-dialog-close
-        # Try to find and click close buttons in modal overlays
-        try:
-            clicked = await self.page.evaluate(
-                """() => {
-                    const isVisible = (element) => {
-                        if (!element) return false;
-                        const style = window.getComputedStyle(element);
-                        const rect = element.getBoundingClientRect();
-                        return (
-                            style.display !== 'none' &&
-                            style.visibility !== 'hidden' &&
-                            rect.width > 0 &&
-                            rect.height > 0
-                        );
-                    };
-
-                    let clicked = 0;
-                    // Try to find close buttons in modal overlays
-                    const selectors = [
-                        'div[role="dialog"] button[aria-label*="close" i]',
-                        'div[role="dialog"] button[aria-label*="dismiss" i]',
-                        'div[data-dialog-overlay] button[aria-label*="close" i]',
-                        'div[data-dialog-overlay] button[aria-label*="dismiss" i]',
-                        'div._modal-overlay button[aria-label*="close" i]',
-                        'div._modal-overlay button[aria-label*="dismiss" i]',
-                        'div[class*="modal-overlay"] button[aria-label*="close" i]',
-                        'div[class*="modal-overlay"] button[aria-label*="dismiss" i]',
-                    ];
-                    let clicked = 0;
-                    for (const selector of selectors) {
-                        for (const button of document.querySelectorAll(selector)) {
-                            if (button.disabled || !isVisible(button)) {
-                                continue;
-                            }
-                            try {
-                                button.click();
-                                clicked += 1;
-                            } catch (e) {
-                                // Ignore
-                            }
-                        }
+                        } catch (e) {}
                     }
 
-                    // 4. Handle promotional / announcement popups (e.g. "GLM-5.1 is now available") with "Maybe Later"
+                    // D. Fallback: Promo / action buttons like "Maybe Later", or "Next" / "Done" if walkthrough is present
                     for (const button of document.querySelectorAll('button')) {
-                        if (button.disabled || !isVisible(button)) {
-                            continue;
-                        }
+                        if (button.disabled || !isVisible(button)) continue;
                         const text = (button.textContent || '').trim().toLowerCase();
                         if (text === 'maybe later' || text.includes('maybe later')) {
                             try {
                                 button.click();
                                 clicked += 1;
-                            } catch (e) {
-                                // Ignore
-                            }
+                            } catch (e) {}
+                        } else if (hasWalkthrough && (text === 'next' || text === 'got it' || text === 'get started' || text === 'done')) {
+                            try {
+                                button.click();
+                                clicked += 1;
+                            } catch (e) {}
                         }
                     }
 
@@ -614,9 +598,69 @@ class GLMDriver(BaseDriver):
             )
             total_clicked += int(clicked or 0)
         except Exception as e:
-            Logger.debug(f"{context}: failed to dismiss modal close buttons: {e}")
+            Logger.debug(f"{context}: failed in evaluate modal dismissal: {e}")
 
-        # Backup check for Maybe Later button via locator
+        # 2. Check Playwright locators for top-right close buttons or Maybe Later / Next on walkthrough
+        try:
+            walkthrough = self.page.locator("div").filter(has_text=re.compile(r"A\s+fresh\s+new\s+interface", re.IGNORECASE))
+            if await walkthrough.count() > 0 and await walkthrough.first.is_visible():
+                # Look for close button with SVG in the dialog
+                dialog_buttons = self.page.locator("div[role='dialog'] button, div[data-state='open'] button")
+                count = await dialog_buttons.count()
+                dismissed = False
+                for idx in range(count):
+                    btn = dialog_buttons.nth(idx)
+                    try:
+                        if not await btn.is_visible():
+                            continue
+                        txt = (await btn.inner_text() or "").strip().lower()
+                        aria = (await btn.get_attribute("aria-label") or "").strip().lower()
+                        has_svg = await btn.locator("svg").count() > 0
+                        if "close" in aria or "dismiss" in aria or (has_svg and not txt):
+                            await btn.click(timeout=1000)
+                            total_clicked += 1
+                            dismissed = True
+                            break
+                    except Exception:
+                        continue
+
+                if not dismissed:
+                    # Try clicking Next / Got it button in walkthrough
+                    next_btn = self.page.locator("button").filter(has_text=re.compile(r"^(Next|Got it|Get started|Done)$", re.IGNORECASE))
+                    if await next_btn.count() > 0 and await next_btn.first.is_visible():
+                        await next_btn.first.click(timeout=1000)
+                        total_clicked += 1
+        except Exception as e:
+            Logger.debug(f"{context}: walkthrough locator fallback error: {e}")
+
+        # 3. Native Escape key if any dialog/overlay still present
+        try:
+            has_overlay = await self.page.evaluate(
+                """() => {
+                    const isVisible = (element) => {
+                        if (!element) return false;
+                        const style = window.getComputedStyle(element);
+                        const rect = element.getBoundingClientRect();
+                        return (
+                            style.display !== 'none' &&
+                            style.visibility !== 'hidden' &&
+                            rect.width > 0 &&
+                            rect.height > 0
+                        );
+                    };
+                    const dialogs = document.querySelectorAll(
+                        '[role="dialog"], [data-dialog-overlay], div[data-state="open"]'
+                    );
+                    return Array.from(dialogs).some(isVisible);
+                }"""
+            )
+            if has_overlay:
+                await self.page.keyboard.press("Escape")
+                await asyncio.sleep(0.08)
+        except Exception as e:
+            Logger.debug(f"{context}: failed to press native Escape: {e}")
+
+        # 4. Backup check for Maybe Later button via locator
         try:
             maybe_later = self.page.locator("button").filter(has_text=re.compile(r"^maybe\s+later$", re.IGNORECASE))
             if await maybe_later.count() > 0 and await maybe_later.first.is_visible():
@@ -1276,7 +1320,10 @@ class GLMDriver(BaseDriver):
             "textarea#chat-input, #chat-input, "
             "button:has-text('Sign in'), a:has-text('Sign in'), [role='button']:has-text('Sign in')"
         )
-        combined_selector = f"{shell_selector}, button[data-dialog-close]"
+        combined_selector = (
+            f"{shell_selector}, button[data-dialog-close], div[role='dialog'], "
+            "div[data-state='open'], button:has-text('Maybe Later'), button:has-text('Next')"
+        )
         deadline = None if timeout_ms is None else time.time() + max(0.0, int(timeout_ms) / 1000.0)
 
         while True:
