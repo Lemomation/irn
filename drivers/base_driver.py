@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import asyncio
 import json
+import math
+import random
 import secrets
 import string
 from abc import ABC, abstractmethod
@@ -12,7 +14,11 @@ from urllib.parse import unquote, urlparse
 import httpx
 from patchright.async_api import Browser, BrowserContext, Page, async_playwright
 
-from drivers.providers import DriverProvider, get_playwright_profile_dir
+from drivers.providers import (
+    DriverProvider,
+    get_playwright_profile_dir,
+    get_provider_behavior_category_key,
+)
 from ece.manager import EceManager
 from ece.models import CredentialPair
 from utils.browser_manager import install_chromium_browser, probe_browser_executable_path
@@ -114,6 +120,8 @@ class BaseDriver(ABC):
         self._ece_rotation_exclude_emails_callback: Optional[Callable[[], Iterable[str]]] = None
         self._profile_compatibility_assessment: ProfileCompatibilityAssessment | None = None
         self._profile_compatibility_warning_sent = False
+        self._minimized_hmm_notice_sent = False
+        self._last_mouse_position: tuple[float, float] | None = None
 
     def _ece_select_least_used(self) -> bool:
         try:
@@ -824,6 +832,299 @@ class BaseDriver(ABC):
     @property
     def provider_label(self) -> str:
         return self.provider.value
+
+    def _humanize_mouse_movements_enabled(self) -> bool:
+        """Return whether the active provider should use slower, pointer-visible UI actions."""
+        category_key = get_provider_behavior_category_key(self.provider)
+        if not category_key:
+            return False
+        try:
+            return bool(
+                self.config_manager.get_setting(
+                    category_key,
+                    "humanize_mouse_movements",
+                )
+            )
+        except Exception:
+            return False
+
+    async def _human_delay(self, delay_s: float = 0.8) -> None:
+        delay = max(0.0, float(delay_s))
+        if self._humanize_mouse_movements_enabled() and delay > 0.0:
+            delay = (delay * random.uniform(0.85, 1.25)) + random.uniform(0.03, 0.16)
+        await asyncio.sleep(delay)
+
+    async def _restore_minimized_window_for_hmm(self) -> None:
+        """Restore Chromium if minimized before humanized pointer work."""
+        if not self.page or not self.context:
+            return
+        if not self._humanize_mouse_movements_enabled():
+            return
+
+        label = self.provider_label
+        cdp_session = None
+        try:
+            cdp_session = await self.context.new_cdp_session(self.page)
+            window_info = await cdp_session.send("Browser.getWindowForTarget")
+            bounds = window_info.get("bounds") if isinstance(window_info, dict) else None
+            if not isinstance(bounds, dict):
+                return
+
+            window_state = str(bounds.get("windowState") or "").strip().lower()
+            if window_state != "minimized":
+                return
+
+            window_id = window_info.get("windowId")
+            await cdp_session.send(
+                "Browser.setWindowBounds",
+                {
+                    "windowId": window_id,
+                    "bounds": {"windowState": "normal"},
+                },
+            )
+            try:
+                await self.page.bring_to_front()
+            except Exception:
+                pass
+
+            Logger.warning(
+                f"{label}: browser window was minimized while Humanize Mouse "
+                "Movements was enabled; restored it before a pointer action."
+            )
+            if not self._minimized_hmm_notice_sent:
+                self._minimized_hmm_notice_sent = True
+                self.notify_user(
+                    f"{label} Browser Restored",
+                    f"{label} was minimized with Humanize Mouse Movements enabled, so IntenseRP restored the browser window. Check the app for more info.",
+                    level="warning",
+                    dialog_message=(
+                        f"{label} was minimized while Humanize Mouse Movements was enabled, "
+                        "so IntenseRP restored the browser window before clicking.\n\n"
+                        f"Minimized {label} windows can miss clicks, hover actions, and "
+                        "file-picker actions. You can still leave the browser unfocused: "
+                        "just open another window or focus a different one instead of "
+                        f"minimizing the {label} browser."
+                    ),
+                )
+            await asyncio.sleep(0.15)
+        except Exception as e:
+            Logger.debug(
+                f"{label}: minimized-window restore check failed before "
+                f"humanized action: {e}"
+            )
+        finally:
+            if cdp_session is not None:
+                try:
+                    await cdp_session.detach()
+                except Exception:
+                    pass
+
+    async def _humanized_action_pause(
+        self,
+        min_s: float = 0.04,
+        max_s: float = 0.14,
+    ) -> None:
+        """Add a tiny optional pause around UI actions when paced interactions are enabled."""
+        if not self._humanize_mouse_movements_enabled():
+            return
+
+        low = max(0.0, float(min_s))
+        high = max(low, float(max_s))
+        await asyncio.sleep(random.uniform(low, high))
+
+    @staticmethod
+    def _click_timeout_for_probe(timeout: Any, cap_ms: float = 1500.0) -> float:
+        try:
+            value = float(timeout)
+        except Exception:
+            value = cap_ms
+        if value <= 0:
+            return 0.0
+        return min(value, cap_ms)
+
+    def _mouse_steps_for_target(self, target: tuple[float, float] | None) -> int:
+        if target is None or self._last_mouse_position is None:
+            return random.randint(12, 24)
+
+        distance = math.hypot(
+            float(target[0]) - float(self._last_mouse_position[0]),
+            float(target[1]) - float(self._last_mouse_position[1]),
+        )
+        base_steps = int(distance / 18.0) + random.randint(4, 10)
+        return max(8, min(48, base_steps))
+
+    @staticmethod
+    def _pick_humanized_point_in_box(
+        box: dict[str, Any] | None,
+    ) -> tuple[dict[str, float] | None, tuple[float, float] | None]:
+        if not isinstance(box, dict):
+            return None, None
+        try:
+            raw_x = box.get("x") if box.get("x") is not None else box.get("left")
+            raw_y = box.get("y") if box.get("y") is not None else box.get("top")
+            left = float(raw_x or 0.0)
+            top = float(raw_y or 0.0)
+            width = float(box.get("width") or 0.0)
+            height = float(box.get("height") or 0.0)
+        except Exception:
+            return None, None
+        if width <= 0.0 or height <= 0.0:
+            return None, None
+
+        x_margin = min(width * 0.25, 14.0)
+        y_margin = min(height * 0.25, 10.0)
+        rel_x = (
+            width / 2.0
+            if width <= (x_margin * 2.0)
+            else random.uniform(x_margin, width - x_margin)
+        )
+        rel_y = (
+            height / 2.0
+            if height <= (y_margin * 2.0)
+            else random.uniform(y_margin, height - y_margin)
+        )
+        return {"x": rel_x, "y": rel_y}, (left + rel_x, top + rel_y)
+
+    async def _humanized_click_position(
+        self,
+        locator,
+        *,
+        timeout: Any = 3000,
+    ) -> tuple[dict[str, float] | None, tuple[float, float] | None]:
+        """Pick a slightly varied visible click point inside a locator."""
+        try:
+            await locator.scroll_into_view_if_needed(
+                timeout=self._click_timeout_for_probe(timeout)
+            )
+        except Exception:
+            pass
+
+        try:
+            box = await locator.bounding_box(
+                timeout=self._click_timeout_for_probe(timeout)
+            )
+        except Exception:
+            box = None
+        return self._pick_humanized_point_in_box(box)
+
+    async def _click_locator(
+        self,
+        locator,
+        *,
+        timeout: Any = 3000,
+        force: bool | None = None,
+        position: dict[str, float] | None = None,
+        button: str | None = None,
+        click_count: int | None = None,
+        no_wait_after: bool | None = None,
+    ) -> None:
+        """Click a locator, optionally adding native Playwright pointer movement and pacing."""
+        kwargs: dict[str, Any] = {"timeout": timeout}
+        if force is not None:
+            kwargs["force"] = force
+        if button is not None:
+            kwargs["button"] = button
+        if click_count is not None:
+            kwargs["click_count"] = click_count
+        if no_wait_after is not None:
+            kwargs["no_wait_after"] = no_wait_after
+
+        if not self._humanize_mouse_movements_enabled():
+            if position is not None:
+                kwargs["position"] = position
+            await locator.click(**kwargs)
+            return
+
+        await self._restore_minimized_window_for_hmm()
+
+        target = None
+        click_position = position
+        if click_position is None:
+            click_position, target = await self._humanized_click_position(
+                locator,
+                timeout=timeout,
+            )
+        if click_position is not None:
+            kwargs["position"] = click_position
+
+        kwargs["delay"] = random.uniform(45.0, 140.0)
+        kwargs["steps"] = self._mouse_steps_for_target(target)
+
+        await self._humanized_action_pause(0.04, 0.16)
+        try:
+            await self._restore_minimized_window_for_hmm()
+            await locator.click(**kwargs)
+            if target is not None:
+                self._last_mouse_position = target
+        finally:
+            await self._humanized_action_pause(0.06, 0.20)
+
+    async def _move_mouse_to_point(self, x: float, y: float) -> None:
+        if not self.page:
+            return
+
+        x = float(x)
+        y = float(y)
+        if not self._humanize_mouse_movements_enabled():
+            await self.page.mouse.move(x, y)
+            self._last_mouse_position = (x, y)
+            return
+
+        await self._restore_minimized_window_for_hmm()
+
+        start = self._last_mouse_position
+        if start is not None:
+            distance = math.hypot(x - float(start[0]), y - float(start[1]))
+            if distance > 70.0:
+                dx = x - float(start[0])
+                dy = y - float(start[1])
+                px = -dy / distance
+                py = dx / distance
+                bend = min(distance * 0.18, 42.0) * random.uniform(-1.0, 1.0)
+                t = random.uniform(0.35, 0.65)
+                mid_x = float(start[0]) + (dx * t) + (px * bend)
+                mid_y = float(start[1]) + (dy * t) + (py * bend)
+                await self.page.mouse.move(
+                    mid_x,
+                    mid_y,
+                    steps=max(4, self._mouse_steps_for_target((mid_x, mid_y)) // 2),
+                )
+                self._last_mouse_position = (mid_x, mid_y)
+
+        await self.page.mouse.move(x, y, steps=self._mouse_steps_for_target((x, y)))
+        self._last_mouse_position = (x, y)
+
+    async def _click_mouse_point(self, x: float, y: float) -> None:
+        if not self.page:
+            return
+
+        if not self._humanize_mouse_movements_enabled():
+            await self.page.mouse.move(x, y)
+            await asyncio.sleep(0.04)
+            await self.page.mouse.click(x, y)
+            await asyncio.sleep(0.08)
+            self._last_mouse_position = (float(x), float(y))
+            return
+
+        await self._humanized_action_pause(0.03, 0.12)
+        await self._move_mouse_to_point(float(x), float(y))
+        await self._humanized_action_pause(0.04, 0.13)
+        await self._restore_minimized_window_for_hmm()
+        await self.page.mouse.click(
+            float(x),
+            float(y),
+            delay=random.uniform(45.0, 130.0),
+        )
+        self._last_mouse_position = (float(x), float(y))
+        await self._humanized_action_pause(0.06, 0.18)
+
+    async def _click_bounding_box(self, box: dict[str, Any] | None) -> bool:
+        """Click a random interior point of a DOMRect/bounding box via Playwright mouse."""
+        _rel, target = self._pick_humanized_point_in_box(box)
+        if target is None:
+            return False
+        await self._click_mouse_point(target[0], target[1])
+        return True
 
     @property
     def required_ui_language_label(self) -> str:

@@ -97,6 +97,11 @@ class DeepSeekDriver(BaseDriver):
         ".ds-button._52c986b.ds-button--circle:visible",
         "div.ds-icon-button._52c986b:visible",
     ]
+    BACKGROUND_RESILIENCE_BROWSER_ARGS: tuple[str, ...] = (
+        "--disable-background-timer-throttling",
+        "--disable-backgrounding-occluded-windows",
+        "--disable-renderer-backgrounding",
+    )
 
     def __init__(self, config_manager):
         super().__init__(config_manager=config_manager, provider=DriverProvider.DEEPSEEK)
@@ -125,6 +130,15 @@ class DeepSeekDriver(BaseDriver):
 
     def get_start_url(self) -> str:
         return "https://chat.deepseek.com/"
+
+    def _get_browser_launch_args(self) -> list[str]:
+        """Keep hidden DeepSeek windows responsive when humanized pointer work is enabled."""
+        args = super()._get_browser_launch_args()
+        if self._humanize_mouse_movements_enabled():
+            for arg in self.BACKGROUND_RESILIENCE_BROWSER_ARGS:
+                if arg not in args:
+                    args.append(arg)
+        return args
 
     async def after_start(self, status_callback: Optional[Callable[[str], None]] = None) -> None:
         # Detect DeepSeek UI language early (warn only; hard-requirement is enforced per-request)
@@ -314,14 +328,20 @@ class DeepSeekDriver(BaseDriver):
                     )
                     if await email_input.count() == 0:
                         email_input = form_root.first.locator("input[type='text']")
+                    if self._humanize_mouse_movements_enabled():
+                        await self._click_locator(email_input.first, timeout=3000)
                     await email_input.first.fill(email)
+                    await self._humanized_action_pause(0.05, 0.16)
                     
                     # Fill password
                     Logger.debug("Entering password...")
                     password_input = form_root.first.locator(
                         "input[autocomplete='current-password'], input[type='password']"
                     )
+                    if self._humanize_mouse_movements_enabled():
+                        await self._click_locator(password_input.first, timeout=3000)
                     await password_input.first.fill(password)
+                    await self._humanized_action_pause(0.05, 0.16)
                     
                     # Click login button
                     Logger.debug("Clicking login button...")
@@ -330,7 +350,7 @@ class DeepSeekDriver(BaseDriver):
                         login_button = form_root.first.locator("button.ds-basic-button--primary")
                     if await login_button.count() == 0:
                         login_button = self.page.locator("button", has_text="Log in")
-                    await login_button.first.click()
+                    await self._click_locator(login_button.first, timeout=3000)
                     
                     # Wait for navigation back to the chat page
                     await self.page.wait_for_selector("textarea", timeout=60000)
@@ -400,14 +420,14 @@ class DeepSeekDriver(BaseDriver):
         try:
             mode = str(
                 self.config_manager.get_setting("deepseek_behavior", "request_capture_mode")
-                or self.REQUEST_CAPTURE_MODE_REPLAY
+                or self.REQUEST_CAPTURE_MODE_CDP_TEEING
             ).strip().lower()
         except Exception:
-            mode = self.REQUEST_CAPTURE_MODE_REPLAY
+            mode = self.REQUEST_CAPTURE_MODE_CDP_TEEING
 
-        if mode == self.REQUEST_CAPTURE_MODE_CDP_TEEING:
-            return self.REQUEST_CAPTURE_MODE_CDP_TEEING
-        return self.REQUEST_CAPTURE_MODE_REPLAY
+        if mode == self.REQUEST_CAPTURE_MODE_REPLAY:
+            return self.REQUEST_CAPTURE_MODE_REPLAY
+        return self.REQUEST_CAPTURE_MODE_CDP_TEEING
 
     @classmethod
     def _is_completion_request_url(cls, url: Any) -> bool:
@@ -1367,7 +1387,7 @@ class DeepSeekDriver(BaseDriver):
                 Logger.info("Preparing new chat session...")
                 await self._click_new_chat()
                 # Small wait for the UI to update
-                await asyncio.sleep(0.5)
+                await self._human_delay(0.5)
 
                 # Apply settings before sending
                 await self.set_model_type_state(effective_model_type)
@@ -1382,7 +1402,7 @@ class DeepSeekDriver(BaseDriver):
                 await self.set_search_state(enable_search)
                 
                 # Small delay for the toggles to take effect
-                await asyncio.sleep(0.5)
+                await self._human_delay(0.5)
                 
                 # Check if we should send as text file
                 if send_as_text_file:
@@ -1572,7 +1592,7 @@ class DeepSeekDriver(BaseDriver):
                 return False
 
             Logger.debug("Clicking Stop button...")
-            await stop_button.click()
+            await self._click_locator(stop_button, timeout=3000)
             Logger.debug("Stop button clicked successfully.")
             return True
         except Exception as e:
@@ -1984,7 +2004,7 @@ class DeepSeekDriver(BaseDriver):
         
         if is_selected != state:
             Logger.debug(f"Toggling DeepThink to {state}...")
-            await button.first.click()
+            await self._click_locator(button.first, timeout=3000)
         else:
             Logger.debug(f"DeepThink is already {state}.")
 
@@ -2025,7 +2045,7 @@ class DeepSeekDriver(BaseDriver):
         
         if is_selected != state:
             Logger.debug(f"Toggling Search to {state}...")
-            await button.click()
+            await self._click_locator(button, timeout=3000)
         else:
             Logger.debug(f"Search is already {state}.")
 
@@ -2082,8 +2102,17 @@ class DeepSeekDriver(BaseDriver):
                 return
 
             # Toggle the sidebar
-            clicked = await self.page.evaluate('''() => {
+            humanize = self._humanize_mouse_movements_enabled()
+            result = await self.page.evaluate('''(humanize) => {
                 const buttons = Array.from(document.querySelectorAll('.ds-icon-button, button, div[role="button"]'));
+                const pick = (el) => {
+                    const r = el.getBoundingClientRect();
+                    if (humanize) {
+                        return { clicked: false, box: { x: r.left, y: r.top, width: r.width, height: r.height } };
+                    }
+                    el.click();
+                    return { clicked: true, box: null };
+                };
                 // Check aria-label / title
                 for (const b of buttons) {
                     const aria = (b.getAttribute('aria-label') || '').toLowerCase();
@@ -2091,8 +2120,7 @@ class DeepSeekDriver(BaseDriver):
                     if (aria.includes('sidebar') || title.includes('sidebar') || aria.includes('collapse') || aria.includes('expand') || aria.includes('menu')) {
                         const rect = b.getBoundingClientRect();
                         if (rect.width > 0 && rect.height > 0) {
-                            b.click();
-                            return true;
+                            return pick(b);
                         }
                     }
                 }
@@ -2102,13 +2130,15 @@ class DeepSeekDriver(BaseDriver):
                     return r.top >= 0 && r.top < 80 && r.left < 200 && r.width > 0 && r.height > 0;
                 });
                 if (headerButtons.length > 0) {
-                    headerButtons[0].click();
-                    return true;
+                    return pick(headerButtons[0]);
                 }
-                return false;
-            }''')
+                return { clicked: false, box: null };
+            }''', humanize)
+            clicked = bool(result and result.get("clicked"))
+            if (not clicked) and result and result.get("box"):
+                clicked = await self._click_bounding_box(result.get("box"))
             if clicked:
-                await asyncio.sleep(0.3)
+                await self._human_delay(0.3)
         except Exception as e:
             Logger.debug(f"DeepSeek: set_sidebar_status ignored: {e}")
 
@@ -2152,8 +2182,8 @@ class DeepSeekDriver(BaseDriver):
                         if len(text) > 50:
                             continue
                         Logger.debug(f"DeepSeek: Clicking visible New Chat button via {sel}")
-                        await el.click(timeout=2000)
-                        await asyncio.sleep(0.4)
+                        await self._click_locator(el, timeout=2000)
+                        await self._human_delay(0.4)
                         if not _is_in_chat_session():
                             Logger.info("DeepSeek: Started new chat via sidebar button.")
                             return
@@ -2165,7 +2195,16 @@ class DeepSeekDriver(BaseDriver):
         # [0] = Sidebar toggle, [1] = Search, [2] = New chat (tooltip 'New chat').
         # Use page.evaluate to find the New chat button either by tooltip/aria or by position in the capsule.
         try:
-            clicked_icon = await self.page.evaluate('''() => {
+            humanize = self._humanize_mouse_movements_enabled()
+            icon_result = await self.page.evaluate('''(humanize) => {
+                const pick = (el, method) => {
+                    const r = el.getBoundingClientRect();
+                    if (humanize) {
+                        return { method, clicked: false, box: { x: r.left, y: r.top, width: r.width, height: r.height } };
+                    }
+                    el.click();
+                    return { method, clicked: true, box: null };
+                };
                 // Check aria-label / title / tooltip matching 'new chat'
                 const buttons = Array.from(document.querySelectorAll('.ds-icon-button, button, div[role="button"], div[tabindex="0"], a'));
                 for (const el of buttons) {
@@ -2175,8 +2214,7 @@ class DeepSeekDriver(BaseDriver):
                     if (aria.includes('new chat') || title.includes('new chat') || tooltip.includes('new chat')) {
                         const rect = el.getBoundingClientRect();
                         if (rect.width > 0 && rect.height > 0) {
-                            el.click();
-                            return 'aria_or_title';
+                            return pick(el, 'aria_or_title');
                         }
                     }
                 }
@@ -2191,15 +2229,18 @@ class DeepSeekDriver(BaseDriver):
                 // If >= 2 buttons: the last button is the New Chat button
                 if (topButtons.length >= 2) {
                     const newChatBtn = topButtons[topButtons.length - 1];
-                    newChatBtn.click();
-                    return 'top_capsule_last_button';
+                    return pick(newChatBtn, 'top_capsule_last_button');
                 }
 
                 return null;
-            }''')
+            }''', humanize)
+            clicked_icon = icon_result.get("method") if isinstance(icon_result, dict) else None
+            if icon_result and (not icon_result.get("clicked")) and icon_result.get("box"):
+                if not await self._click_bounding_box(icon_result.get("box")):
+                    clicked_icon = None
             if clicked_icon:
                 Logger.debug(f"DeepSeek: Clicked New Chat icon button ({clicked_icon}).")
-                await asyncio.sleep(0.4)
+                await self._human_delay(0.4)
                 if not _is_in_chat_session():
                     Logger.info("DeepSeek: Started new chat via top-left icon button.")
                     return
@@ -2210,15 +2251,15 @@ class DeepSeekDriver(BaseDriver):
         try:
             Logger.debug("DeepSeek: Attempting to open sidebar to click New chat...")
             await self.set_sidebar_status(open=True)
-            await asyncio.sleep(0.3)
+            await self._human_delay(0.3)
             for sel in text_selectors:
                 loc = self.page.locator(sel)
                 cnt = await loc.count()
                 for i in range(cnt):
                     el = loc.nth(i)
                     if await el.is_visible():
-                        await el.click(timeout=2000)
-                        await asyncio.sleep(0.4)
+                        await self._click_locator(el, timeout=2000)
+                        await self._human_delay(0.4)
                         if not _is_in_chat_session():
                             Logger.info("DeepSeek: Opened sidebar and started new chat.")
                             return
@@ -2227,20 +2268,27 @@ class DeepSeekDriver(BaseDriver):
 
         # Strategy 4: Click the DeepSeek whale logo / home link
         try:
-            clicked_logo = await self.page.evaluate('''() => {
+            humanize = self._humanize_mouse_movements_enabled()
+            logo_result = await self.page.evaluate('''(humanize) => {
                 const candidates = Array.from(document.querySelectorAll('a[href="/"], .ds-logo, header a, div[role="button"]'));
                 for (const el of candidates) {
                     const r = el.getBoundingClientRect();
                     if (r.top >= 0 && r.top < 80 && r.left < 100 && r.width > 0 && r.height > 0) {
+                        if (humanize) {
+                            return { clicked: false, box: { x: r.left, y: r.top, width: r.width, height: r.height } };
+                        }
                         el.click();
-                        return true;
+                        return { clicked: true, box: null };
                     }
                 }
-                return false;
-            }''')
+                return { clicked: false, box: null };
+            }''', humanize)
+            clicked_logo = bool(logo_result and logo_result.get("clicked"))
+            if (not clicked_logo) and logo_result and logo_result.get("box"):
+                clicked_logo = await self._click_bounding_box(logo_result.get("box"))
             if clicked_logo:
                 Logger.debug("DeepSeek: Clicked logo to reset chat.")
-                await asyncio.sleep(0.5)
+                await self._human_delay(0.5)
                 if not _is_in_chat_session():
                     Logger.info("DeepSeek: Started new chat via logo click.")
                     return
@@ -2284,7 +2332,10 @@ class DeepSeekDriver(BaseDriver):
                 Logger.warning("Message textarea not found.")
                 return
         Logger.debug(f"Entering message: {message[:50]}..." if len(message) > 50 else f"Entering message: {message}")
+        if self._humanize_mouse_movements_enabled():
+            await self._click_locator(textarea.first, timeout=2000)
         await textarea.first.fill(message)
+        await self._humanized_action_pause(0.05, 0.16)
 
     async def _send_message(self, timeout: int = None):
         """
@@ -2307,7 +2358,7 @@ class DeepSeekDriver(BaseDriver):
             
             if not await self._is_deepseek_control_disabled(send_button):
                 Logger.debug("Clicking send button...")
-                await send_button.click()
+                await self._click_locator(send_button, timeout=3000)
             else:
                 Logger.warning("Send button is disabled. Cannot send message.")
         else:
@@ -2370,7 +2421,7 @@ class DeepSeekDriver(BaseDriver):
                         return False
 
                     Logger.debug("Clicking regenerate button...")
-                    await regen_button.click()
+                    await self._click_locator(regen_button, timeout=3000)
                     return True
 
             Logger.warning("Regenerate button not found.")
@@ -2411,7 +2462,7 @@ class DeepSeekDriver(BaseDriver):
                 return False
 
             Logger.debug("Clicking regenerate button from DeepSeek action bar...")
-            await regen_button.click()
+            await self._click_locator(regen_button, timeout=3000)
             return True
 
         return None
@@ -2453,7 +2504,7 @@ class DeepSeekDriver(BaseDriver):
             
             # Wait a bit for the upload to be processed by the UI
             # You might need to wait for a specific indicator that the file is ready
-            await asyncio.sleep(1.0) 
+            await self._human_delay(1.0)
             return True
         else:
             Logger.warning("File input not found.")

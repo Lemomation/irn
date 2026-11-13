@@ -42,6 +42,11 @@ MIMO_MODEL_RENAMES = {
     "MiMo-V2.5": "MiMo-V2.6-Pro",
 }
 
+QWEN_MODEL_RENAMES = {
+    "Qwen3.6-Plus": "Qwen3.7-Plus",
+    "Qwen3.5-Plus": "Qwen3.7-Plus",
+}
+
 LEGACY_PARALLEL_PROVIDER_FIELD_BY_PROVIDER = {
     DriverProvider.DEEPSEEK: "parallel_enable_deepseek",
     DriverProvider.GLM_CHAT: "parallel_enable_glm",
@@ -65,42 +70,47 @@ LEGACY_PARALLEL_PROVIDER_INSTANCE_FIELD_BY_PROVIDER = {
 MAX_PARALLEL_PROVIDER_INSTANCES = 32
 
 
-def migrate_glm_model_value(value: Any) -> Any:
+def _migrate_provider_model_value(value: Any, renames: Dict[str, str]) -> Any:
     if not isinstance(value, str):
         return value
-    return GLM_MODEL_RENAMES.get(value, value)
+    return renames.get(value, value)
+
+
+def _migrate_provider_behavior_model(raw_settings: Any, renames: Dict[str, str]) -> bool:
+    if not isinstance(raw_settings, dict):
+        return False
+
+    raw_model = raw_settings.get("model")
+    migrated_model = _migrate_provider_model_value(raw_model, renames)
+    if migrated_model == raw_model:
+        return False
+
+    raw_settings["model"] = migrated_model
+    return True
+
+
+def migrate_glm_model_value(value: Any) -> Any:
+    return _migrate_provider_model_value(value, GLM_MODEL_RENAMES)
 
 
 def migrate_glm_behavior_settings(raw_settings: Any) -> bool:
-    if not isinstance(raw_settings, dict):
-        return False
-
-    raw_model = raw_settings.get("model")
-    migrated_model = migrate_glm_model_value(raw_model)
-    if migrated_model == raw_model:
-        return False
-
-    raw_settings["model"] = migrated_model
-    return True
+    return _migrate_provider_behavior_model(raw_settings, GLM_MODEL_RENAMES)
 
 
 def migrate_mimo_model_value(value: Any) -> Any:
-    if not isinstance(value, str):
-        return value
-    return MIMO_MODEL_RENAMES.get(value, value)
+    return _migrate_provider_model_value(value, MIMO_MODEL_RENAMES)
 
 
 def migrate_mimo_behavior_settings(raw_settings: Any) -> bool:
-    if not isinstance(raw_settings, dict):
-        return False
+    return _migrate_provider_behavior_model(raw_settings, MIMO_MODEL_RENAMES)
 
-    raw_model = raw_settings.get("model")
-    migrated_model = migrate_mimo_model_value(raw_model)
-    if migrated_model == raw_model:
-        return False
 
-    raw_settings["model"] = migrated_model
-    return True
+def migrate_qwen_model_value(value: Any) -> Any:
+    return _migrate_provider_model_value(value, QWEN_MODEL_RENAMES)
+
+
+def migrate_qwen_behavior_settings(raw_settings: Any) -> bool:
+    return _migrate_provider_behavior_model(raw_settings, QWEN_MODEL_RENAMES)
 
 
 def _clamp_parallel_instance_count(value: Any) -> int:
@@ -216,9 +226,10 @@ class SettingsMigrator:
             raw_provider = providers_credentials.get("provider")
             providers_credentials["provider"] = DriverProvider.from_setting(raw_provider).value
 
-        # Migration: removed GLM / MiMo model labels -> current supported labels
+        # Migration: removed GLM / MiMo / Qwen model labels -> current supported labels
         migrate_glm_behavior_settings(settings.get("glm_behavior"))
         migrate_mimo_behavior_settings(settings.get("mimo_behavior"))
+        migrate_qwen_behavior_settings(settings.get("qwen_behavior"))
 
         loadouts_root = settings.get("loadouts")
         if isinstance(loadouts_root, dict):
@@ -235,6 +246,8 @@ class SettingsMigrator:
                         migrate_glm_behavior_settings(definition.get("settings"))
                     elif provider is DriverProvider.MIMO:
                         migrate_mimo_behavior_settings(definition.get("settings"))
+                    elif provider is DriverProvider.QWEN_LM:
+                        migrate_qwen_behavior_settings(definition.get("settings"))
 
         # Migration: account engine toggles moved from Experimental -> Providers & Credentials
         experimental = settings.get("experimental")

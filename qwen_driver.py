@@ -300,12 +300,16 @@ class QwenLMDriver(BaseDriver):
     FILE_INPUT_SELECTOR = "input#filesUpload"
 
     SIDEBAR_SELECTOR = "div.sidebar"
-    SIDEBAR_OPEN_BUTTON_SELECTOR = "div.sidebar-side-fold-container-open"
-    SIDEBAR_CLOSE_BUTTON_SELECTOR = "button.sidebar-toggle-button"
+    SIDEBAR_OPEN_BUTTON_SELECTOR = "button.slide-switch, button[aria-label='Toggle sidebar'], div.sidebar-side-fold-container-open"
+    SIDEBAR_CLOSE_BUTTON_SELECTOR = "button.slide-switch, button[aria-label='Toggle sidebar'], button.sidebar-toggle-button"
     NEW_CHAT_BUTTON_SELECTOR = "div.sidebar-entry-fixed-list-content"
     NEW_CHAT_LOOKUP_TIMEOUT_MS = 5000
     NEW_CHAT_LOOKUP_POLL_INTERVAL_S = 0.15
 
+    THINKING_V2_TRIGGER_LABEL_SELECTOR = "span.qwen-chat-v2-dropdown-menu-select-label"
+    THINKING_V2_POPUP_SELECTOR = "div.qwen-chat-v2-dropdown-menu-container, div.qwen-chat-v2-dropdown-menu-popup"
+    THINKING_V2_ITEM_SELECTOR = "div.qwen-chat-v2-dropdown-menu-item"
+    THINKING_V2_ITEM_LABEL_SELECTOR = "span.qwen-chat-v2-dropdown-menu-item-label"
     THINKING_TRIGGER_SELECTOR = "span.ant-select-selection-item:has(div.qwen-select-thinking-label)"
     THINKING_TRIGGER_LABEL_SELECTOR = "span.qwen-select-thinking-label-text"
     THINKING_OPTIONS_SELECTOR = "div.rc-virtual-list-holder-inner"
@@ -319,28 +323,42 @@ class QwenLMDriver(BaseDriver):
     MODE_SELECT_TRIGGER_SELECTOR = "div.mode-select"
     MODE_SELECT_TRIGGER_OPEN_SELECTOR = "div.mode-select-open"
     MODE_SELECT_TRIGGER_ANY_SELECTOR = "div.mode-select-open, div.mode-select"
-    MODE_SELECT_DROPDOWN_MENU_ROOT_SELECTOR = "ul.ant-dropdown-menu-root.qwen-dropdown-menu"
+    MODE_SELECT_V2_POPUP_SELECTOR = "div.qwen-chat-v2-dropdown-menu-popup"
+    MODE_SELECT_V2_ITEM_SELECTOR = "div.qwen-chat-v2-dropdown-menu-item.mode-select-common-item[role='menuitem'], div.qwen-chat-v2-dropdown-menu-item[role='menuitem']"
+    MODE_SELECT_V2_ITEM_NAME_SELECTOR = "span.mode-select-dropdown-item-name"
+    MODE_SELECT_DROPDOWN_MENU_ROOT_SELECTOR = "div.qwen-chat-v2-dropdown-menu-popup, ul.ant-dropdown-menu-root.qwen-dropdown-menu"
     MODE_SELECT_COMMON_SUBMENU_SELECTOR = (
         "li.ant-dropdown-menu-submenu.ant-dropdown-menu-submenu-vertical.mode-select-common-item"
     )
     MODE_SELECT_MENU_ITEM_SELECTOR = "li[data-menu-id]"
-    MODE_SELECT_TOOLS_SWITCH_SELECTOR = "div[class*='qwen-chat-ui-packages-design-switch-size-small']"
+    MODE_SELECT_TOOLS_SWITCH_SELECTOR = (
+        "button[role='switch'].qwen-chat-v2-switch, button[role='switch'], "
+        "div[class*='qwen-chat-ui-packages-design-switch-size-small']"
+    )
 
+    MODEL_SELECTOR_V2_TRIGGER_SELECTOR = "div.wms-trigger"
+    MODEL_SELECTOR_V2_TEXT_SELECTOR = "div.wms-trigger .wms-trigger__text, .wms-trigger__text"
+    MODEL_SELECTOR_V2_POPUP_SELECTOR = "div.wms-popup"
+    MODEL_SELECTOR_V2_LIST_SELECTOR = "div.wms-list"
+    MODEL_SELECTOR_V2_ITEM_SELECTOR = "div.wms-list__item"
+    MODEL_SELECTOR_V2_NAME_SELECTOR = "div.wms-list__name-text"
+    MODEL_SELECTOR_V2_MORE_SELECTOR = "div.wms-more-entry, div.wms-list__item--expand"
     MODEL_SELECTOR_TEXT_SELECTOR = "[class*='model-selector-text']"
     MODEL_SELECTOR_POPUP_SELECTOR = "div[class*='model-selector-popup']"
 
     MODEL_LABELS: List[str] = [
+        "Qwen4-Max-Preview",
         "Qwen3.8-Max",
         "Qwen3.8-Omni-Flash",
         "Qwen3.7-Plus",
         "Qwen3.7-Max",
+        "Qwen3.5-Omni-Plus",
         "Qwen3.6-Plus",
         "Qwen3.5-Plus",
         "Qwen3.6-Max-Preview",
         "Qwen3.6-27B",
         "Qwen3.7-Max-Preview",
         "Qwen3.7-Plus-Preview",
-        "Qwen3.5-Omni-Plus",
         "Qwen3.6-35B-A3B",
         "Qwen3.5-Flash",
         "Qwen3.5-Max-Preview",
@@ -357,6 +375,33 @@ class QwenLMDriver(BaseDriver):
         "Qwen3-Omni-Flash",
         "Qwen2.5-Max",
     ]
+    RETIRED_MODEL_LABELS: set[str] = {
+        "Qwen3.6-Plus",
+        "Qwen3.5-Plus",
+        "Qwen3.6-Max-Preview",
+        "Qwen3.6-27B",
+        "Qwen3.7-Max-Preview",
+        "Qwen3.7-Plus-Preview",
+        "Qwen3.6-35B-A3B",
+        "Qwen3.5-Flash",
+        "Qwen3.5-Max-Preview",
+        "Qwen3.6-Plus-Preview",
+        "Qwen3.5-397B-A17B",
+        "Qwen3.5-122B-A10B",
+        "Qwen3.5-Omni-Flash",
+        "Qwen3.5-27B",
+        "Qwen3.5-35B-A3B",
+        "Qwen3-Max",
+        "Qwen3-235B-A22B-2507",
+        "Qwen3-Coder",
+        "Qwen3-VL-235B-A22B",
+        "Qwen3-Omni-Flash",
+        "Qwen2.5-Max",
+    }
+    QWEN_RETIRED_MODEL_FALLBACKS: Dict[str, str] = {
+        "Qwen3.6-Plus": "Qwen3.7-Plus",
+        "Qwen3.5-Plus": "Qwen3.7-Plus",
+    }
 
     def __init__(self, config_manager):
         super().__init__(config_manager=config_manager, provider=DriverProvider.QWEN_LM)
@@ -624,13 +669,150 @@ class QwenLMDriver(BaseDriver):
 
         return False
 
+    @classmethod
+    def _is_chat_page_url(cls, url: Any) -> bool:
+        try:
+            parsed = urlsplit(str(url or ""))
+        except Exception:
+            return False
+        host = (parsed.hostname or "").lower()
+        path = (parsed.path or "").lower()
+        return host == "chat.qwen.ai" and not path.startswith("/auth")
+
+    async def _has_authenticated_page_session(self) -> bool:
+        if not self.page:
+            return False
+
+        try:
+            current_url = str(self.page.url or "")
+        except Exception:
+            current_url = ""
+
+        if not self._is_chat_page_url(current_url):
+            return False
+
+        try:
+            result = await self.page.evaluate(
+                """async () => {
+                    const isVisible = (el) => {
+                        try {
+                            if (!el) return false;
+                            const r = el.getBoundingClientRect();
+                            if (!r || r.width <= 0 || r.height <= 0) return false;
+                            const s = window.getComputedStyle(el);
+                            return !!s && s.display !== 'none' && s.visibility !== 'hidden';
+                        } catch (e) {
+                            return false;
+                        }
+                    };
+
+                    const hasLoginButton = Array.from(document.querySelectorAll('button, a')).some((el) => {
+                        if (!isVisible(el)) return false;
+                        const text = (el.textContent || '').replace(/\\s+/g, ' ').trim().toLowerCase();
+                        return text === 'log in' || text === 'sign in' || text === 'sign up';
+                    });
+                    if (hasLoginButton) {
+                        return false;
+                    }
+
+                    const userMenuBtn = document.querySelector('button.user-menu-btn');
+                    if (userMenuBtn && isVisible(userMenuBtn)) {
+                        return true;
+                    }
+
+                    let lsToken = '';
+                    try {
+                        lsToken = (window.localStorage && window.localStorage.getItem('token')) || '';
+                    } catch (e) {}
+
+                    try {
+                        const headers = {};
+                        if (lsToken) {
+                            headers['Authorization'] = `Bearer ${lsToken}`;
+                        }
+                        const resp = await fetch('/api/v2/users/user/settings', {
+                            credentials: 'include',
+                            headers,
+                        });
+                        if (resp && resp.ok) {
+                            const payload = await resp.json().catch(() => null);
+                            if (payload && payload.success === true) {
+                                return true;
+                            }
+                            if (
+                                payload
+                                && typeof payload.data === 'object'
+                                && payload.data !== null
+                                && payload.data.code !== 'Unauthorized'
+                                && payload.success !== false
+                            ) {
+                                return true;
+                            }
+                        }
+                    } catch (e) {}
+
+                    return false;
+                }"""
+            )
+            return bool(result)
+        except Exception:
+            return False
+
+    async def _has_authenticated_session(self, *, wait_if_chat_loading: bool = False) -> bool:
+        if await self._has_token_cookie():
+            return True
+
+        if await self._has_authenticated_page_session():
+            return True
+
+        if wait_if_chat_loading and self.page:
+            try:
+                current_url = str(self.page.url or "")
+            except Exception:
+                current_url = ""
+            if self._is_chat_page_url(current_url):
+                deadline = time.monotonic() + 2.5
+                while time.monotonic() < deadline:
+                    await asyncio.sleep(0.25)
+                    if await self._has_token_cookie() or await self._has_authenticated_page_session():
+                        return True
+                    try:
+                        has_login_prompt = await self.page.evaluate(
+                            """() => {
+                                return Array.from(document.querySelectorAll('button, a')).some((el) => {
+                                    const r = el.getBoundingClientRect();
+                                    if (!r || r.width <= 0 || r.height <= 0) return false;
+                                    const t = (el.textContent || '').replace(/\\s+/g, ' ').trim().toLowerCase();
+                                    return t === 'log in' || t === 'sign in' || t === 'sign up';
+                                });
+                            }"""
+                        )
+                        if has_login_prompt:
+                            break
+                    except Exception:
+                        pass
+
+        return False
+
+    async def _ensure_chat_page_ready_after_login(self) -> None:
+        if not self.page:
+            return
+        try:
+            current_url = str(self.page.url or "")
+        except Exception:
+            current_url = ""
+        if not self._is_chat_page_url(current_url):
+            await self.page.goto(self.CHAT_URL, wait_until="domcontentloaded", timeout=45000)
+        await self._wait_for_chat_ready(timeout_ms=60000)
+
     async def login(self) -> None:
         if not self.page:
             raise RuntimeError("Page is not initialized.")
 
         try:
-            if await self._has_token_cookie():
+            if await self._has_authenticated_session(wait_if_chat_loading=True):
                 Logger.info("QwenLM: already signed in.")
+                await self._ensure_chat_page_ready_after_login()
                 self._mark_active_ece_pair_used()
                 return
         except Exception:
@@ -655,13 +837,9 @@ class QwenLMDriver(BaseDriver):
                 "Please log in to QwenLM in the browser window, then come back here.",
                 level="info",
             )
-            # Wait indefinitely until we can see a session cookie and the chat UI
-            while True:
-                if await self._has_token_cookie():
-                    break
-                await asyncio.sleep(0.5)
-            await self.page.goto(self.CHAT_URL, wait_until="domcontentloaded", timeout=45000)
-            await self._wait_for_chat_ready(timeout_ms=60000)
+            # Wait indefinitely until an active session and the chat UI are detected
+            await self._wait_for_token_cookie()
+            await self._ensure_chat_page_ready_after_login()
             Logger.success("QwenLM: login detected.")
             self._mark_active_ece_pair_used()
             return
@@ -677,12 +855,8 @@ class QwenLMDriver(BaseDriver):
                 "Auto Login is enabled, but no QwenLM accounts are saved. Please log in manually.",
                 level="warning",
             )
-            while True:
-                if await self._has_token_cookie():
-                    break
-                await asyncio.sleep(0.5)
-            await self.page.goto(self.CHAT_URL, wait_until="domcontentloaded", timeout=45000)
-            await self._wait_for_chat_ready(timeout_ms=60000)
+            await self._wait_for_token_cookie()
+            await self._ensure_chat_page_ready_after_login()
             Logger.success("QwenLM: login detected.")
             self._mark_active_ece_pair_used()
             return
@@ -698,6 +872,11 @@ class QwenLMDriver(BaseDriver):
         try:
             await self.page.wait_for_selector(".qwenchat-auth-pc-input-items", timeout=30000)
         except Exception as e:
+            if await self._has_authenticated_session():
+                Logger.info("QwenLM: session authenticated during login redirect.")
+                await self._ensure_chat_page_ready_after_login()
+                self.ece_mark_used(email)
+                return
             Logger.error(f"QwenLM: login form not found: {e}")
             return
 
@@ -724,25 +903,20 @@ class QwenLMDriver(BaseDriver):
             level="info",
         )
 
-        # Wait for cookie + chat UI
+        # Wait for session + chat UI
         try:
             await asyncio.wait_for(self._wait_for_token_cookie(), timeout=90.0)
         except asyncio.TimeoutError:
-            Logger.warning("QwenLM: login cookie not detected after submit. Waiting for manual completion...")
+            Logger.warning("QwenLM: login session not detected after submit. Waiting for manual completion...")
             await self._wait_for_token_cookie()
 
-        try:
-            await self.page.goto(self.CHAT_URL, wait_until="domcontentloaded", timeout=45000)
-        except Exception:
-            pass
-
-        await self._wait_for_chat_ready(timeout_ms=60000)
+        await self._ensure_chat_page_ready_after_login()
         Logger.success("QwenLM: chat ready.")
         self.ece_mark_used(email)
 
     async def _wait_for_token_cookie(self) -> None:
         while True:
-            if await self._has_token_cookie():
+            if await self._has_authenticated_session():
                 return
             await asyncio.sleep(0.5)
 
@@ -943,7 +1117,7 @@ class QwenLMDriver(BaseDriver):
             return False
 
         try:
-            if not await self._has_token_cookie():
+            if not await self._has_authenticated_session():
                 Logger.warning("Multi-Slot Cache (QwenLM): cached chat URL is not available for the active session.")
                 return False
         except Exception:
@@ -1175,7 +1349,10 @@ class QwenLMDriver(BaseDriver):
         return True
 
     def api_real_model_labels(self) -> list[str]:
-        return list(self.MODEL_LABELS)
+        return [
+            label for label in self.MODEL_LABELS
+            if label not in self.RETIRED_MODEL_LABELS
+        ]
 
     def _get_qwen_model_label_for_request(self, model: Any = None) -> str:
         override = resolve_real_model_label_from_model_id(
@@ -1183,7 +1360,8 @@ class QwenLMDriver(BaseDriver):
             model,
             self.api_real_model_labels(),
         )
-        return override or self._get_configured_qwen_model_label()
+        target = override or self._get_configured_qwen_model_label()
+        return self.QWEN_RETIRED_MODEL_FALLBACKS.get(target, target)
 
     async def apply_configured_model(self, model: Any = None) -> None:
         desired = self._get_qwen_model_label_for_request(model)
@@ -1200,7 +1378,8 @@ class QwenLMDriver(BaseDriver):
             value = self.config_manager.get_setting("qwen_behavior", "model")
         except Exception:
             value = None
-        return str(value or "").strip()
+        chosen = str(value or "").strip() or "Qwen3.7-Plus"
+        return self.QWEN_RETIRED_MODEL_FALLBACKS.get(chosen, chosen)
 
     @staticmethod
     def _normalize_text(value: str) -> str:
@@ -1231,11 +1410,20 @@ class QwenLMDriver(BaseDriver):
 
         try:
             label = await self.page.evaluate(
-                "() => {"
-                "  const el = document.querySelector(\"[class*='model-selector-text']\");"
-                "  if (!el) return '';"
-                "  return (el.textContent || '').toString().trim();"
-                "}"
+                "(selectors) => {"
+                "  for (const sel of selectors) {"
+                "    const nodes = Array.from(document.querySelectorAll(sel));"
+                "    for (const el of nodes) {"
+                "      const text = (el && el.textContent ? el.textContent : '').toString().trim();"
+                "      if (text) return text;"
+                "    }"
+                "  }"
+                "  return '';"
+                "}",
+                [
+                    self.MODEL_SELECTOR_V2_TEXT_SELECTOR,
+                    self.MODEL_SELECTOR_TEXT_SELECTOR,
+                ],
             )
         except Exception as e:
             Logger.debug(f"QwenLM: failed to read current model label: {e}")
@@ -1263,16 +1451,41 @@ class QwenLMDriver(BaseDriver):
         if not self.page:
             return False
 
+        candidates = []
+        v2_trigger = self.page.locator(self.MODEL_SELECTOR_V2_TRIGGER_SELECTOR)
+        if await v2_trigger.count() > 0:
+            candidates.append(v2_trigger.first)
+
+        v2_text = self.page.locator(self.MODEL_SELECTOR_V2_TEXT_SELECTOR)
+        if await v2_text.count() > 0:
+            candidates.extend(
+                [
+                    v2_text.first.locator("xpath=.."),
+                    v2_text.first.locator("xpath=../.."),
+                    v2_text.first,
+                ]
+            )
+
         text_el = self.page.locator(self.MODEL_SELECTOR_TEXT_SELECTOR)
-        if await text_el.count() == 0:
+        if await text_el.count() > 0:
+            candidates.extend(
+                [
+                    text_el.first.locator("xpath=.."),
+                    text_el.first.locator("xpath=../.."),
+                    text_el.first,
+                ]
+            )
+
+        if not candidates:
             Logger.warning("QwenLM: model selector not found.")
             return False
 
-        candidates = [
-            text_el.first.locator("xpath=.."),
-            text_el.first.locator("xpath=../.."),
-            text_el.first,
-        ]
+        popup_wait_sel = (
+            f"{self.MODEL_SELECTOR_V2_POPUP_SELECTOR} {self.MODEL_SELECTOR_V2_LIST_SELECTOR}, "
+            f"{self.MODEL_SELECTOR_V2_POPUP_SELECTOR}, "
+            f"{self.MODEL_SELECTOR_POPUP_SELECTOR} div[class*='model-list'], "
+            f"{self.MODEL_SELECTOR_POPUP_SELECTOR}"
+        )
         last_error: str | None = None
 
         for cand in candidates:
@@ -1284,7 +1497,7 @@ class QwenLMDriver(BaseDriver):
 
             try:
                 await self.page.wait_for_selector(
-                    f"{self.MODEL_SELECTOR_POPUP_SELECTOR} div[class*='model-list']",
+                    popup_wait_sel,
                     timeout=int(timeout_ms),
                     state="visible",
                 )
@@ -1359,15 +1572,25 @@ class QwenLMDriver(BaseDriver):
         if not wanted:
             return False
 
-        popup_sel = f"{self.MODEL_SELECTOR_POPUP_SELECTOR}, div.ant-dropdown, div[class*='ant-dropdown-menu'], div[class*='model-selector']"
-        item_sel = "div[class*='model-item___']"
-        name_span_sel = "div[class*='model-item-name'] span"
+        popup_sel = (
+            f"{self.MODEL_SELECTOR_V2_POPUP_SELECTOR}, "
+            f"{self.MODEL_SELECTOR_POPUP_SELECTOR}, "
+            "div.ant-dropdown, div[class*='ant-dropdown-menu'], div[class*='model-selector']"
+        )
+        item_sel = (
+            f"{self.MODEL_SELECTOR_V2_ITEM_SELECTOR}, "
+            "div[class*='model-item___'], div[class*='model-item']"
+        )
+        name_sel = (
+            f"{self.MODEL_SELECTOR_V2_NAME_SELECTOR}, "
+            "div[class*='model-item-name'] span, div[class*='model-item-name']"
+        )
 
         async def _try_click_once() -> bool:
             try:
                 return bool(
                     await self.page.evaluate(
-                        "(popupSel, itemSel, nameSpanSel, wantedRaw) => {"
+                        "(popupSel, itemSel, nameSel, wantedRaw) => {"
                         "  const canon = (v) => {"
                         "    try {"
                         "      return (v || '').toString().normalize('NFKC').replace(/[^a-z0-9]+/gi, '').toLowerCase();"
@@ -1391,18 +1614,15 @@ class QwenLMDriver(BaseDriver):
                         "  const popups = Array.from(document.querySelectorAll(popupSel)).filter(isVisible);"
                         "  if (!popups.length) return false;"
                         "  for (const popup of popups) {"
-                        "    let items = Array.from(popup.querySelectorAll(itemSel));"
-                        "    if (!items.length) items = Array.from(popup.querySelectorAll(\"div[class*='model-item']\"));"
-                        "    items = items.filter(isVisible);"
+                        "    const items = Array.from(popup.querySelectorAll(itemSel)).filter(isVisible);"
                         "    for (const item of items) {"
-                        "      const nameEl = item.querySelector(\"div[class*='model-item-name']\");"
-                        "      const span = (nameEl && nameEl.querySelector('span')) || item.querySelector(nameSpanSel) || item.querySelector('span');"
-                        "      const raw = (span && span.textContent) ? span.textContent : ((nameEl && nameEl.textContent) ? nameEl.textContent : '');"
+                        "      const nameEl = item.querySelector(nameSel) || item.querySelector('span');"
+                        "      const raw = (nameEl && nameEl.textContent) ? nameEl.textContent : '';"
                         "      const labelCanon = canon(raw);"
                         "      if (!labelCanon) continue;"
                         "      if (labelCanon === wantedCanon) {"
                         "        try { item.scrollIntoView({block: 'center'}); } catch (e) {}"
-                        "        try { item.click(); } catch (e) { try { (span || nameEl || item).click(); } catch (e2) {} }"
+                        "        try { item.click(); } catch (e) { try { (nameEl || item).click(); } catch (e2) {} }"
                         "        return true;"
                         "      }"
                         "    }"
@@ -1411,7 +1631,7 @@ class QwenLMDriver(BaseDriver):
                         "}",
                         popup_sel,
                         item_sel,
-                        name_span_sel,
+                        name_sel,
                         wanted,
                     )
                 )
@@ -1424,7 +1644,7 @@ class QwenLMDriver(BaseDriver):
         # Expand "more models" list (it's hidden behind a hover/click target)
         try:
             revealed = await self.page.evaluate(
-                "(popupSel) => {"
+                "(popupSel, moreSel) => {"
                 "  const norm = (v) => (v || '').toString().replace(/\\s+/g, ' ').trim().toLowerCase();"
                 "  const isVisible = (el) => {"
                 "    try {"
@@ -1440,8 +1660,9 @@ class QwenLMDriver(BaseDriver):
                 "  const popups = Array.from(document.querySelectorAll(popupSel)).filter(isVisible);"
                 "  if (!popups.length) return false;"
                 "  for (const popup of popups) {"
-                "    const candidates = Array.from(popup.querySelectorAll(\"span.ant-dropdown-trigger, div[class*='view-more'], [class*='more'], div, span, li, button\"));"
-                "    for (const el of candidates) {"
+                "    const priority = Array.from(popup.querySelectorAll(moreSel)).filter(isVisible);"
+                "    const fallback = Array.from(popup.querySelectorAll(\"span.ant-dropdown-trigger, div[class*='view-more'], [class*='more'], div, span, li, button\"));"
+                "    for (const el of [...priority, ...fallback]) {"
                 "      const t = norm(el.textContent || '');"
                 "      if (!t.includes('expand more models') && !t.includes('more models')) continue;"
                 "      try { el.dispatchEvent(new MouseEvent('mouseenter', {bubbles:true})); } catch (e) {}"
@@ -1453,6 +1674,7 @@ class QwenLMDriver(BaseDriver):
                 "  return false;"
                 "}",
                 popup_sel,
+                self.MODEL_SELECTOR_V2_MORE_SELECTOR,
             )
         except Exception:
             revealed = False
@@ -1466,24 +1688,26 @@ class QwenLMDriver(BaseDriver):
         for _ in range(10):
             try:
                 await self.page.evaluate(
-                    f"() => {{"
-                    f"  const isVisible = (el) => {{"
-                    f"    try {{"
-                    f"      if (!el) return false;"
-                    f"      const r = el.getBoundingClientRect();"
-                    f"      if (!r || r.width <= 0 || r.height <= 0) return false;"
-                    f"      const style = window.getComputedStyle(el);"
-                    f"      if (!style) return false;"
-                    f"      if (style.visibility === 'hidden' || style.display === 'none') return false;"
-                    f"      return true;"
-                    f"    }} catch (e) {{ return false; }}"
-                    f"  }};"
-                    f"  const popups = Array.from(document.querySelectorAll('{self.MODEL_SELECTOR_POPUP_SELECTOR}')).filter(isVisible);"
-                    f"  for (const popup of popups) {{"
-                    f"    const lists = Array.from(popup.querySelectorAll(\"div[class*='model-list']\")).filter(isVisible);"
-                    f"    for (const el of lists) {{ el.scrollTop = (el.scrollTop || 0) + 220; }}"
-                    f"  }}"
-                    f"}}"
+                    "(popupSel, listSel) => {"
+                    "  const isVisible = (el) => {"
+                    "    try {"
+                    "      if (!el) return false;"
+                    "      const r = el.getBoundingClientRect();"
+                    "      if (!r || r.width <= 0 || r.height <= 0) return false;"
+                    "      const style = window.getComputedStyle(el);"
+                    "      if (!style) return false;"
+                    "      if (style.visibility === 'hidden' || style.display === 'none') return false;"
+                    "      return true;"
+                    "    } catch (e) { return false; }"
+                    "  };"
+                    "  const popups = Array.from(document.querySelectorAll(popupSel)).filter(isVisible);"
+                    "  for (const popup of popups) {"
+                    "    const lists = Array.from(popup.querySelectorAll(listSel)).filter(isVisible);"
+                    "    for (const el of lists) { el.scrollTop = (el.scrollTop || 0) + 220; }"
+                    "  }"
+                    "}",
+                    popup_sel,
+                    f"{self.MODEL_SELECTOR_V2_LIST_SELECTOR}, div.wms-popup__wrapper, div[class*='model-list']",
                 )
             except Exception:
                 pass
@@ -1500,7 +1724,7 @@ class QwenLMDriver(BaseDriver):
 
         try:
             labels = await self.page.evaluate(
-                "(popupSel) => {"
+                "(popupSel, itemSel, nameSel) => {"
                 "  const isVisible = (el) => {"
                 "    try {"
                 "      if (!el) return false;"
@@ -1515,20 +1739,19 @@ class QwenLMDriver(BaseDriver):
                 "  const popups = Array.from(document.querySelectorAll(popupSel)).filter(isVisible);"
                 "  const out = [];"
                 "  for (const popup of popups) {"
-                "    let items = Array.from(popup.querySelectorAll(\"div[class*='model-item___']\"));"
-                "    if (!items.length) items = Array.from(popup.querySelectorAll(\"div[class*='model-item']\"));"
-                "    items = items.filter(isVisible);"
+                "    const items = Array.from(popup.querySelectorAll(itemSel)).filter(isVisible);"
                 "    for (const item of items) {"
-                "      const nameEl = item.querySelector(\"div[class*='model-item-name']\");"
-                "      const span = (nameEl && nameEl.querySelector('span')) || item.querySelector(\"div[class*='model-item-name'] span\") || item.querySelector('span');"
-                "      const raw = (span && span.textContent) ? span.textContent : ((nameEl && nameEl.textContent) ? nameEl.textContent : '');"
+                "      const nameEl = item.querySelector(nameSel) || item.querySelector('span');"
+                "      const raw = (nameEl && nameEl.textContent) ? nameEl.textContent : '';"
                 "      const text = (raw || '').toString().trim();"
                 "      if (text) out.push(text);"
                 "    }"
                 "  }"
                 "  return out;"
                 "}",
-                self.MODEL_SELECTOR_POPUP_SELECTOR,
+                f"{self.MODEL_SELECTOR_V2_POPUP_SELECTOR}, {self.MODEL_SELECTOR_POPUP_SELECTOR}",
+                f"{self.MODEL_SELECTOR_V2_ITEM_SELECTOR}, div[class*='model-item___'], div[class*='model-item']",
+                f"{self.MODEL_SELECTOR_V2_NAME_SELECTOR}, div[class*='model-item-name'] span, div[class*='model-item-name']",
             )
         except Exception as e:
             Logger.debug(f"QwenLM: failed to read model picker labels: {e}")
@@ -1565,7 +1788,8 @@ class QwenLMDriver(BaseDriver):
         if not wanted_canon:
             return False
 
-        root = self.page.locator(self.MODEL_SELECTOR_POPUP_SELECTOR)
+        popup_sel = f"{self.MODEL_SELECTOR_V2_POPUP_SELECTOR}, {self.MODEL_SELECTOR_POPUP_SELECTOR}"
+        root = self.page.locator(popup_sel)
         popup_count = await root.count()
         if popup_count == 0:
             return False
@@ -1579,14 +1803,16 @@ class QwenLMDriver(BaseDriver):
                 except Exception:
                     pass
 
-                spans = popup.locator("div[class*='model-item-name'] span")
-                span_count = await spans.count()
-                if span_count == 0:
-                    spans = popup.locator("span")
-                    span_count = await spans.count()
+                names = popup.locator(
+                    f"{self.MODEL_SELECTOR_V2_NAME_SELECTOR}, div[class*='model-item-name'] span"
+                )
+                name_count = await names.count()
+                if name_count == 0:
+                    names = popup.locator("span")
+                    name_count = await names.count()
 
-                for sidx in range(min(span_count, 80)):
-                    cand = spans.nth(sidx)
+                for sidx in range(min(name_count, 80)):
+                    cand = names.nth(sidx)
                     try:
                         text = str(await cand.text_content() or "").strip()
                     except Exception:
@@ -1594,7 +1820,9 @@ class QwenLMDriver(BaseDriver):
                     if self._canonicalize_model_label(text) != wanted_canon:
                         continue
 
-                    item = cand.locator("xpath=ancestor::div[contains(@class,'model-item___')][1]")
+                    item = cand.locator("xpath=ancestor::div[contains(@class,'wms-list__item')][1]")
+                    if await item.count() == 0:
+                        item = cand.locator("xpath=ancestor::div[contains(@class,'model-item___')][1]")
                     if await item.count() == 0:
                         item = cand.locator("xpath=ancestor::div[contains(@class,'model-item')][1]")
 
@@ -1622,6 +1850,7 @@ class QwenLMDriver(BaseDriver):
         # Attempt to reveal expanded model list (hover/click) and retry
         try:
             trigger = self.page.locator(
+                f"{self.MODEL_SELECTOR_V2_POPUP_SELECTOR} {self.MODEL_SELECTOR_V2_MORE_SELECTOR}, "
                 f"{self.MODEL_SELECTOR_POPUP_SELECTOR} div[class*='view-more']",
                 has_text="Expand more models",
             )
@@ -1648,6 +1877,7 @@ class QwenLMDriver(BaseDriver):
 
     async def _ensure_qwen_model_selected(self, desired_label: str) -> None:
         desired = str(desired_label or "").strip()
+        desired = self.QWEN_RETIRED_MODEL_FALLBACKS.get(desired, desired)
         if not desired:
             return
 
@@ -1935,6 +2165,15 @@ class QwenLMDriver(BaseDriver):
         if not self.page:
             return ""
 
+        v2_label = self.page.locator(self.THINKING_V2_TRIGGER_LABEL_SELECTOR)
+        try:
+            if await v2_label.count() > 0:
+                text = (await v2_label.first.inner_text() or "").strip()
+                if text:
+                    return text
+        except Exception:
+            pass
+
         trigger = self.page.locator(self.THINKING_TRIGGER_SELECTOR)
         label = trigger.first.locator(self.THINKING_TRIGGER_LABEL_SELECTOR)
         if await label.count() == 0:
@@ -1970,6 +2209,32 @@ class QwenLMDriver(BaseDriver):
 
         seen: set[str] = set()
         out: List[str] = []
+        v2_items = self.page.locator(self.THINKING_V2_ITEM_SELECTOR)
+        try:
+            v2_count = await v2_items.count()
+        except Exception:
+            v2_count = 0
+
+        for idx in range(min(v2_count, 20)):
+            cand = v2_items.nth(idx)
+            try:
+                if not await cand.is_visible():
+                    continue
+                label_el = cand.locator(self.THINKING_V2_ITEM_LABEL_SELECTOR)
+                if await label_el.count() > 0:
+                    text = str(await label_el.first.text_content() or "").strip()
+                else:
+                    text = str(await cand.text_content() or "").strip().splitlines()[0].strip()
+            except Exception:
+                continue
+            if not text or text in seen:
+                continue
+            seen.add(text)
+            out.append(text)
+
+        if out:
+            return out
+
         labels = self.page.locator(
             f"{self.THINKING_OPTIONS_SELECTOR} {self.THINKING_OPTION_LABEL_SELECTOR}"
         )
@@ -2012,7 +2277,7 @@ class QwenLMDriver(BaseDriver):
         async def _try_dom_click() -> bool:
             try:
                 clicked = await self.page.evaluate(
-                    "(rootSel, optionSel, labelSel, wantedCanon) => {"
+                    "(v2PopupSel, v2ItemSel, v2LabelSel, rootSel, optionSel, labelSel, wantedCanon) => {"
                     "  const canon = (value) => {"
                     "    try {"
                     "      return (value || '').toString().normalize('NFKC')"
@@ -2036,6 +2301,23 @@ class QwenLMDriver(BaseDriver):
                     "      return false;"
                     "    }"
                     "  };"
+                    "  const v2Popups = Array.from(document.querySelectorAll(v2PopupSel)).filter(isVisible);"
+                    "  for (const popup of v2Popups) {"
+                    "    const items = Array.from(popup.querySelectorAll(v2ItemSel)).filter(isVisible);"
+                    "    for (const item of items) {"
+                    "      const labelEl = item.querySelector(v2LabelSel);"
+                    "      const rawCandidates = [];"
+                    "      if (labelEl) rawCandidates.push(labelEl.textContent);"
+                    "      const firstLine = (item.textContent || '').toString().trim().split(/\\r?\\n/)[0];"
+                    "      if (firstLine) rawCandidates.push(firstLine);"
+                    "      rawCandidates.push(item.textContent);"
+                    "      if (rawCandidates.some(raw => canon((raw || '').toString().trim()) === wantedCanon)) {"
+                    "        try { item.scrollIntoView({ block: 'center' }); } catch (e) {}"
+                    "        try { item.click(); return true; } catch (e) {}"
+                    "        if (labelEl) { try { labelEl.click(); return true; } catch (e) {} }"
+                    "      }"
+                    "    }"
+                    "  }"
                     "  const roots = Array.from(document.querySelectorAll(rootSel)).filter(isVisible);"
                     "  for (const root of roots) {"
                     "    const labels = Array.from(root.querySelectorAll(labelSel)).filter(isVisible);"
@@ -2050,6 +2332,9 @@ class QwenLMDriver(BaseDriver):
                     "  }"
                     "  return false;"
                     "}",
+                    self.THINKING_V2_POPUP_SELECTOR,
+                    self.THINKING_V2_ITEM_SELECTOR,
+                    self.THINKING_V2_ITEM_LABEL_SELECTOR,
                     self.THINKING_OPTIONS_SELECTOR,
                     self.THINKING_OPTION_SELECTOR,
                     self.THINKING_OPTION_LABEL_SELECTOR,
@@ -2060,6 +2345,42 @@ class QwenLMDriver(BaseDriver):
             return bool(clicked)
 
         async def _try_locator_click() -> bool:
+            v2_items = self.page.locator(self.THINKING_V2_ITEM_SELECTOR)
+            try:
+                v2_count = await v2_items.count()
+            except Exception:
+                v2_count = 0
+
+            for idx in range(min(v2_count, 20)):
+                cand = v2_items.nth(idx)
+                try:
+                    if not await cand.is_visible():
+                        continue
+                    label_el = cand.locator(self.THINKING_V2_ITEM_LABEL_SELECTOR)
+                    if await label_el.count() > 0:
+                        text = str(await label_el.first.text_content() or "").strip()
+                    else:
+                        text = str(await cand.text_content() or "").strip().splitlines()[0].strip()
+                except Exception:
+                    continue
+                if self._canonicalize_label_text(text) != wanted_canon:
+                    continue
+                try:
+                    await cand.scroll_into_view_if_needed(timeout=1500)
+                except Exception:
+                    pass
+                for force_click in (False, True):
+                    try:
+                        await cand.click(timeout=2000, force=force_click)
+                        return True
+                    except Exception:
+                        pass
+                try:
+                    await cand.evaluate("el => el.click()")
+                    return True
+                except Exception:
+                    continue
+
             labels = self.page.locator(
                 f"{self.THINKING_OPTIONS_SELECTOR} {self.THINKING_OPTION_LABEL_SELECTOR}"
             )
@@ -2137,13 +2458,21 @@ class QwenLMDriver(BaseDriver):
         if self._canonicalize_label_text(current) == wanted_canon:
             return True
 
-        trigger = self.page.locator(self.THINKING_TRIGGER_SELECTOR)
-        if await trigger.count() == 0:
+        v2_trigger = self.page.locator(self.THINKING_V2_TRIGGER_LABEL_SELECTOR)
+        legacy_trigger = self.page.locator(self.THINKING_TRIGGER_SELECTOR)
+
+        trigger = None
+        if await v2_trigger.count() > 0:
+            trigger = v2_trigger.first
+        elif await legacy_trigger.count() > 0:
+            trigger = legacy_trigger.first
+
+        if trigger is None:
             Logger.warning("QwenLM: thinking selector trigger not found.")
             return False
 
         try:
-            await trigger.first.click(timeout=3000)
+            await trigger.click(timeout=3000)
         except Exception as e:
             Logger.warning(f"QwenLM: failed to open thinking dropdown: {e}")
             return False
@@ -2360,7 +2689,17 @@ class QwenLMDriver(BaseDriver):
             except Exception:
                 aria_disabled = ""
 
-            if aria_disabled == "true":
+            try:
+                disabled_attr = await switch.get_attribute("disabled")
+            except Exception:
+                disabled_attr = None
+
+            try:
+                switch_class = str(await switch.get_attribute("class") or "").strip().lower()
+            except Exception:
+                switch_class = ""
+
+            if aria_disabled == "true" or disabled_attr is not None or "disabled" in switch_class:
                 if wanted:
                     self._tools_disabled_for_request = True
                     self.current_tools_enabled = False
@@ -2439,7 +2778,11 @@ class QwenLMDriver(BaseDriver):
 
         for attempt in range(2):
             try:
-                await self.page.wait_for_selector(self.MODE_SELECT_DROPDOWN_MENU_ROOT_SELECTOR, timeout=1200)
+                await self.page.wait_for_selector(
+                    self.MODE_SELECT_DROPDOWN_MENU_ROOT_SELECTOR,
+                    timeout=1200,
+                    state="visible",
+                )
                 break
             except Exception:
                 if attempt != 0:
@@ -2462,10 +2805,14 @@ class QwenLMDriver(BaseDriver):
                     pass
 
         try:
-            await self.page.wait_for_selector(self.MODE_SELECT_DROPDOWN_MENU_ROOT_SELECTOR, timeout=2500)
+            await self.page.wait_for_selector(
+                self.MODE_SELECT_DROPDOWN_MENU_ROOT_SELECTOR,
+                timeout=2500,
+                state="visible",
+            )
         except Exception:
             try:
-                await self.page.wait_for_selector("ul.ant-dropdown-menu-root", timeout=2500)
+                await self.page.wait_for_selector("ul.ant-dropdown-menu-root", timeout=2500, state="visible")
             except Exception:
                 pass
 
@@ -2487,71 +2834,23 @@ class QwenLMDriver(BaseDriver):
         if not self.page:
             return False
 
-        open_trigger = self.page.locator(self.MODE_SELECT_TRIGGER_OPEN_SELECTOR)
-        base_trigger = self.page.locator(self.MODE_SELECT_TRIGGER_SELECTOR)
-        any_trigger = self.page.locator(self.MODE_SELECT_TRIGGER_ANY_SELECTOR)
-
-        clicked_target = None
-        candidates = []
-        if await open_trigger.count() > 0:
-            candidates.append(open_trigger.locator("xpath=.."))
-            candidates.append(open_trigger)
-        if await base_trigger.count() > 0:
-            candidates.append(base_trigger.locator("xpath=.."))
-            candidates.append(base_trigger)
-        if not candidates and await any_trigger.count() > 0:
-            candidates.append(any_trigger)
-
-        clicked = False
-        for candidate in candidates:
-            if await self._click_first_visible_playwright_click(candidate, timeout_ms=3000):
-                clicked_target = candidate
-                clicked = True
-                break
-            if await self._click_first_visible(candidate, timeout_ms=3000):
-                clicked_target = candidate
-                clicked = True
-                break
-
-        if not clicked:
+        menu = await self._open_mode_select_dropdown_menu_root(sync_tools=sync_tools)
+        if menu is None:
             return False
 
-        # If the menu didn't render, try clicking the actual topmost element at the
-        # trigger's center point (helps when the click handler is on a child element)
+        v2_items = self.page.locator(self.MODE_SELECT_V2_ITEM_SELECTOR)
         try:
-            await self.page.wait_for_selector(self.MODE_SELECT_COMMON_SUBMENU_SELECTOR, timeout=1200)
-        except Exception:
-            try:
-                fallback_target = clicked_target or any_trigger
-                if await fallback_target.count() == 0:
-                    return False
-                await fallback_target.first.evaluate(
-                    """(el) => {
-                        if (!el) return;
-                        const rect = el.getBoundingClientRect();
-                        const x = rect.left + rect.width / 2;
-                        const y = rect.top + rect.height / 2;
-                        const top = document.elementFromPoint(x, y);
-                        try { top && top.click(); } catch (e) {}
-                    }"""
-                )
-            except Exception:
-                pass
-
-        try:
-            await self.page.wait_for_selector(self.MODE_SELECT_COMMON_SUBMENU_SELECTOR, timeout=3000)
+            v2_count = await v2_items.count()
+            for idx in range(min(v2_count, 20)):
+                if await v2_items.nth(idx).is_visible():
+                    return True
         except Exception:
             pass
 
-        if sync_tools:
-            try:
-                menu = self.page.locator(self.MODE_SELECT_DROPDOWN_MENU_ROOT_SELECTOR)
-                if await menu.count() == 0:
-                    menu = self.page.locator("ul.ant-dropdown-menu-root")
-                if await menu.count() > 0:
-                    await self._sync_tools_switch_in_mode_select_menu(menu)
-            except Exception:
-                pass
+        try:
+            await self.page.wait_for_selector(self.MODE_SELECT_COMMON_SUBMENU_SELECTOR, timeout=1500)
+        except Exception:
+            pass
 
         submenu = self.page.locator(self.MODE_SELECT_COMMON_SUBMENU_SELECTOR)
         if await submenu.count() == 0:
@@ -2579,29 +2878,58 @@ class QwenLMDriver(BaseDriver):
         if not self.page:
             return "missing"
 
-        item_selector = self._mode_select_item_selector(suffix)
+        wanted_suffix = str(suffix or "").strip().lower()
+        item_selector = self._mode_select_item_selector(wanted_suffix)
         try:
-            await self.page.wait_for_selector(item_selector, timeout=2500)
+            await self.page.wait_for_selector(
+                f"{item_selector}, {self.MODE_SELECT_V2_ITEM_SELECTOR}",
+                timeout=2500,
+                state="visible",
+            )
         except Exception:
             pass
 
         items = self.page.locator(item_selector)
-        if await items.count() == 0:
+        if await items.count() == 0 and wanted_suffix:
             # Fallback: suffix match might not work if Qwen changes the id format.
             items = self.page.locator(
-                f"{self.MODE_SELECT_MENU_ITEM_SELECTOR}[data-menu-id*='{str(suffix or '').strip().lower()}']"
+                f"{self.MODE_SELECT_MENU_ITEM_SELECTOR}[data-menu-id*='{wanted_suffix}']"
             )
+
+        candidate_locators = []
+        try:
+            legacy_count = await items.count()
+        except Exception:
+            legacy_count = 0
+        for idx in range(legacy_count):
+            candidate_locators.append(items.nth(idx))
+
+        if not candidate_locators and wanted_suffix:
+            v2_items = self.page.locator(self.MODE_SELECT_V2_ITEM_SELECTOR)
+            try:
+                v2_count = await v2_items.count()
+            except Exception:
+                v2_count = 0
+            for idx in range(v2_count):
+                cand = v2_items.nth(idx)
+                try:
+                    if not await cand.is_visible():
+                        continue
+                    name_el = cand.locator(self.MODE_SELECT_V2_ITEM_NAME_SELECTOR)
+                    if await name_el.count() > 0:
+                        item_text = str(await name_el.first.inner_text() or "").strip().lower()
+                    else:
+                        item_text = str(await cand.inner_text() or "").strip().lower()
+                except Exception:
+                    continue
+                if wanted_suffix == "search" and ("web search" in item_text or "search" in item_text):
+                    candidate_locators.append(cand)
+                elif wanted_suffix in item_text:
+                    candidate_locators.append(cand)
 
         clicked = False
         disabled = False
-        count = 0
-        try:
-            count = await items.count()
-        except Exception:
-            count = 0
-
-        for idx in range(count):
-            candidate = items.nth(idx)
+        for candidate in candidate_locators:
             try:
                 if not await candidate.is_visible():
                     continue
@@ -2690,21 +3018,33 @@ class QwenLMDriver(BaseDriver):
             primed = await self.page.evaluate(
                 "async (triggerSel, menuSel, itemSel, toolsSwitchSel, wantedTools) => {"
                 "  const sleep = (ms) => new Promise(r => setTimeout(r, ms));"
+                "  const isVisible = (el) => {"
+                "    try {"
+                "      if (!el) return false;"
+                "      const r = el.getBoundingClientRect();"
+                "      if (!r || r.width <= 0 || r.height <= 0) return false;"
+                "      const style = window.getComputedStyle(el);"
+                "      if (!style) return false;"
+                "      if (style.visibility === 'hidden' || style.display === 'none') return false;"
+                "      return true;"
+                "    } catch (e) { return false; }"
+                "  };"
                 "  const clickEl = (el) => {"
                 "    if (!el) return false;"
                 "    try { el.click(); return true; } catch (e) {}"
                 "    try { el.dispatchEvent(new MouseEvent('click', { bubbles: true })); return true; } catch (e) {}"
                 "    return false;"
                 "  };"
+                "  const findVisibleMenu = () => {"
+                "    const nodes = Array.from(document.querySelectorAll(menuSel + ', ul.ant-dropdown-menu-root'));"
+                "    return nodes.find(isVisible) || null;"
+                "  };"
                 "  const syncTools = (root) => {"
                 "    const switches = Array.from((root || document).querySelectorAll(toolsSwitchSel));"
                 "    if (switches.length === 0 && root !== document) {"
                 "      switches.push(...Array.from(document.querySelectorAll(toolsSwitchSel)));"
                 "    }"
-                "    const visible = switches.filter((el) => {"
-                "      const rect = el.getBoundingClientRect();"
-                "      return rect.width > 0 && rect.height > 0;"
-                "    });"
+                "    const visible = switches.filter(isVisible);"
                 "    const target = visible.find((el) => {"
                 "      let current = el;"
                 "      for (let depth = 0; current && depth < 5; depth++, current = current.parentElement) {"
@@ -2715,7 +3055,10 @@ class QwenLMDriver(BaseDriver):
                 "    }) || visible[0];"
                 "    if (!target) return;"
                 "    const checked = (target.getAttribute('aria-checked') || '').toLowerCase() === 'true';"
-                "    const disabled = (target.getAttribute('aria-disabled') || '').toLowerCase() === 'true';"
+                "    const disabled = (target.getAttribute('aria-disabled') || '').toLowerCase() === 'true'"
+                "      || target.disabled === true"
+                "      || target.hasAttribute('disabled')"
+                "      || (target.className || '').toString().toLowerCase().includes('disabled');"
                 "    if (checked !== !!wantedTools && !disabled) clickEl(target);"
                 "  };"
                 ""
@@ -2725,24 +3068,27 @@ class QwenLMDriver(BaseDriver):
                 "  clickEl(triggerTarget);"
                 ""
                 "  const deadline = Date.now() + 3000;"
+                "  let menu = null;"
                 ""
                 "  while (Date.now() < deadline) {"
-                "    const menu = document.querySelector(menuSel) || document.querySelector('ul.ant-dropdown-menu-root');"
+                "    menu = findVisibleMenu();"
                 "    if (menu) {"
                 "      break;"
                 "    }"
                 "    await sleep(50);"
                 "  }"
                 ""
-                "  const menu = document.querySelector(menuSel) || document.querySelector('ul.ant-dropdown-menu-root');"
                 "  if (!menu) return false;"
                 "  syncTools(menu);"
                 ""
                 "  while (Date.now() < deadline) {"
-                "    const items = Array.from(menu.querySelectorAll(itemSel));"
+                "    const items = Array.from(menu.querySelectorAll(itemSel)).filter(isVisible);"
                 "    const target = items.find((el) => {"
-                "      const id = (el.getAttribute('data-menu-id') || '').toString();"
-                "      return id.endsWith('-upload') || id.includes('upload');"
+                "      const id = (el.getAttribute('data-menu-id') || '').toString().toLowerCase();"
+                "      if (id.endsWith('-upload') || id.includes('upload')) return true;"
+                "      const nameEl = el.querySelector('.mode-select-dropdown-item-name');"
+                "      const text = ((nameEl && nameEl.textContent) || el.textContent || '').toString().trim().toLowerCase();"
+                "      return text.includes('upload');"
                 "    });"
                 "    if (target) {"
                 "      const orig = HTMLInputElement.prototype.click;"
@@ -2763,7 +3109,7 @@ class QwenLMDriver(BaseDriver):
                 "}",
                 self.MODE_SELECT_TRIGGER_ANY_SELECTOR,
                 self.MODE_SELECT_DROPDOWN_MENU_ROOT_SELECTOR,
-                self.MODE_SELECT_MENU_ITEM_SELECTOR,
+                f"{self.MODE_SELECT_MENU_ITEM_SELECTOR}, {self.MODE_SELECT_V2_ITEM_SELECTOR}",
                 self.MODE_SELECT_TOOLS_SWITCH_SELECTOR,
                 self._desired_tools_state(),
             )
@@ -2982,6 +3328,11 @@ class QwenLMDriver(BaseDriver):
                     if await upload_item.count() == 0:
                         upload_item = menu_root.locator(
                             f"{self.MODE_SELECT_MENU_ITEM_SELECTOR}[data-menu-id*='upload']"
+                        )
+                    if await upload_item.count() == 0:
+                        upload_item = menu_root.locator(
+                            self.MODE_SELECT_V2_ITEM_SELECTOR,
+                            has_text=re.compile(r"upload", re.IGNORECASE),
                         )
 
                     if await upload_item.count() > 0:

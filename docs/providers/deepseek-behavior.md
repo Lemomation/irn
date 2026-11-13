@@ -14,12 +14,12 @@ Controls how IntenseRP captures DeepSeek's streaming response.
 
 :material-arrow-right: **Settings** → **Provider Behavior** → **DeepSeek** → **Request Capture Mode**
 
-**Replay** is the default. IntenseRP intercepts the DeepSeek request, replays it internally, streams that replay to the API client, and then gives the captured response back to the page. It's the older and battle-tested method, and it works well in most cases.
+**CDP Teeing** is the default. IntenseRP leaves DeepSeek's browser request alone, tees the real response through Chrome DevTools Protocol, and feeds those bytes through the same DeepSeek stream parser. This lets the page JavaScript receive and process its own response normally while IntenseRP observes the stream.
 
-**CDP Teeing** is the newer alternative path. IntenseRP leaves DeepSeek's browser request alone, tees the real response through Chrome DevTools Protocol, and feeds those bytes through the same DeepSeek stream parser. This lets the page JavaScript receive and process its own response normally while IntenseRP observes the stream.
+**Replay** is the older alternative path. IntenseRP intercepts the DeepSeek request, replays it internally, streams that replay to the API client, and then gives the captured response back to the page.
 
-!!! note "Default stays Replay"
-    CDP Teeing is off by default for DeepSeek. It's there if you want the browser-native request path, but Replay remains the known-good default.
+!!! note "Default is CDP Teeing"
+    CDP Teeing is on by default for DeepSeek. You can switch back to Replay here if you prefer the older interception path.
 
 ---
 
@@ -196,11 +196,23 @@ All macros are stripped from the message before sending it to DeepSeek.
 
 ---
 
+## :material-cursor-default-click: Automation
+
+### Humanize Mouse Movements
+
+:material-arrow-right: **Settings** -> **Provider Behavior** -> **DeepSeek** -> **Humanize Mouse Movements**
+
+When enabled, IntenseRP uses slower Playwright-native pointer movement for DeepSeek clicks, adds slight variation to click points, restores minimized browser windows before pointer actions, and inserts tiny pauses around UI actions.
+
+Requests take slightly longer, which can improve reliability if DeepSeek drops or ignores instant automated clicks.
+
+---
+
 ## :material-format-list-checks: Quick Reference
 
 | Setting | What It Does | Default |
 |---------|--------------|---------|
-| **Request Capture Mode** | Captures responses with Replay or CDP Teeing | Replay |
+| **Request Capture Mode** | Captures responses with CDP Teeing or Replay | CDP Teeing |
 | **Enable DeepThink** | Toggles reasoning mode | Off |
 | **Send DeepThink** | Includes thinking in response | Off |
 | **Enable Search** | Allows web search | Off |
@@ -210,6 +222,7 @@ All macros are stripped from the message before sending it to DeepSeek.
 | **Blocked-Response Handling** | Handles detected refusal messages | Off |
 | **Reuse Matching Chat** | Regenerates on duplicate prompts | Off |
 | **Delete Chat After Reply** | Deletes the completed DeepSeek chat after a successful reply | Off |
+| **Humanize Mouse Movements** | Slows DeepSeek UI actions with pointer movement and tiny pauses | Off |
 
 ---
 

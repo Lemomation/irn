@@ -386,11 +386,11 @@ SCHEMA = [
                 key="request_capture_mode",
                 label="Request Capture Mode",
                 type=SettingType.SWITCHER,
-                default=REQUEST_CAPTURE_REPLAY,
+                default=REQUEST_CAPTURE_CDP_TEEING,
                 options=REQUEST_CAPTURE_MODE_OPTIONS,
                 tooltip=(
                     "Choose how IntenseRP should capture provider responses. "
-                    "Replay is the default; CDP Teeing is the newer alternative."
+                    "CDP Teeing is the default; Replay is the older alternative."
                 ),
             ),
             SettingField(
@@ -438,6 +438,19 @@ SCHEMA = [
                 depends="deepseek_behavior.send_as_text_file",
                 docs_path=DOCS_DEEPSEEK,
                 docs_anchor="file-upload-timeout",
+            ),
+            SettingField(
+                key="humanize_mouse_movements",
+                label="Humanize Mouse Movements",
+                type=SettingType.BOOLEAN,
+                default=False,
+                tooltip=(
+                    "Uses slower Playwright-native pointer movement, varied click points, "
+                    "and tiny pauses around UI actions. Requests take longer, "
+                    "but sends can be more reliable."
+                ),
+                docs_path=DOCS_DEEPSEEK,
+                docs_anchor="humanize-mouse-movements",
             ),
             SettingField(
                 key="first_chunk_timeout",
@@ -990,17 +1003,18 @@ SCHEMA = [
                 type=SettingType.DROPDOWN,
                 default="Qwen3.7-Plus",
                 options=[
+                    "Qwen4-Max-Preview",
                     "Qwen3.8-Max",
                     "Qwen3.8-Omni-Flash",
                     "Qwen3.7-Plus",
                     "Qwen3.7-Max",
+                    "Qwen3.5-Omni-Plus",
                     "Qwen3.6-Plus",
                     "Qwen3.5-Plus",
                     "Qwen3.6-Max-Preview",
                     "Qwen3.6-27B",
                     "Qwen3.7-Max-Preview",
                     "Qwen3.7-Plus-Preview",
-                    "Qwen3.5-Omni-Plus",
                     "Qwen3.6-35B-A3B",
                     "Qwen3.5-Flash",
                     "Qwen3.5-Max-Preview",
@@ -1018,11 +1032,12 @@ SCHEMA = [
                     "Qwen2.5-Max",
                 ],
                 deprecated_options=[
+                    "Qwen3.6-Plus",
+                    "Qwen3.5-Plus",
                     "Qwen3.6-Max-Preview",
                     "Qwen3.6-27B",
                     "Qwen3.7-Max-Preview",
                     "Qwen3.7-Plus-Preview",
-                    "Qwen3.5-Omni-Plus",
                     "Qwen3.6-35B-A3B",
                     "Qwen3.5-Flash",
                     "Qwen3.5-Max-Preview",
@@ -3541,6 +3556,7 @@ PROVIDER_BEHAVIOR_GROUPS = {
         {"title": "Uploads", "icon": "upload.svg", "fields": ["send_as_text_file", "file_upload_timeout"]},
         {"title": "Retry and Reuse", "icon": "rotate-ccw.svg", "fields": ["clean_regeneration", "auto_delete_chats", "auto_delete_chats_warning", "multi_slot_cache", "first_chunk_timeout"]},
         {"title": "Blocked Responses", "icon": "shield-ban.svg", "fields": ["anti_censorship"]},
+        {"title": "Automation", "icon": "sparkles.svg", "fields": ["humanize_mouse_movements"]},
     ],
     "glm_behavior": [
         {"title": "Core", "icon": "settings.svg", "fields": ["request_capture_mode", "model", "show_deprecated_models", "deepthink_effort", "send_deepthink", "count_tokens", "search_forced_off_note", "enable_search", "enable_advanced_search", "enable_tools"]},

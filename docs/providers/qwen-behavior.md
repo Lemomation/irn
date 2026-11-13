@@ -85,7 +85,7 @@ Qwen streams tool/search payloads into the same response stream. For stability, 
 
 QwenLM's **Tools** switch lives in the same `+` menu as Search and Upload.
 
-IntenseRP keeps Tools **off by default**. If **Enable Tools** is turned on, the driver will try to flip Qwen's Tools switch on before sending. If Qwen shows the switch as disabled, IntenseRP stops trying for that request and leaves it off.
+IntenseRP keeps Tools **off by default**. If **Enable Tools** is turned on, the driver will try to flip Qwen's Tools switch on before sending. If Qwen shows the switch as disabled (which occurs on some models such as `Qwen4-Max-Preview`), IntenseRP stops trying for that request and leaves it off.
 
 :material-arrow-right: **Settings** -> **Provider Behavior** -> **QwenLM** -> **Enable Tools**
 
