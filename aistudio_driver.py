@@ -317,6 +317,10 @@ class AIStudioDriver(BaseDriver):
         flags=re.IGNORECASE,
     )
     LOWEST_LEVEL_BY_MODEL: Dict[str, str] = {
+        "gemini-4-carbon": "Low",
+        "gemini-4-carbon-preview": "Low",
+        "gemini-4-hydrogen": "Low",
+        "gemini-4-hydrogen-preview": "Low",
         "gemini-4-argon": "Low",
         "gemini-4-argon-preview": "Low",
         "gemini-3.8-flash": "Low",
@@ -336,6 +340,10 @@ class AIStudioDriver(BaseDriver):
         "gemma-4-31b-it": "Minimal",
     }
     THINKING_LEVELS_BY_MODEL: Dict[str, tuple[str, ...]] = {
+        "gemini-4-carbon": ("Low", "Medium", "High"),
+        "gemini-4-carbon-preview": ("Low", "Medium", "High"),
+        "gemini-4-hydrogen": ("Low", "Medium", "High", "Extra High"),
+        "gemini-4-hydrogen-preview": ("Low", "Medium", "High", "Extra High"),
         "gemini-4-argon": ("Low", "Medium", "High"),
         "gemini-4-argon-preview": ("Low", "Medium", "High"),
         "gemini-3.8-flash": ("Low", "Medium", "High"),
@@ -354,7 +362,7 @@ class AIStudioDriver(BaseDriver):
         "gemma-4-26b-a4b-it": ("Minimal", "High"),
         "gemma-4-31b-it": ("Minimal", "High"),
     }
-    THINKING_LEVEL_ORDER = ("Minimal", "Low", "Medium", "High")
+    THINKING_LEVEL_ORDER = ("Minimal", "Low", "Medium", "High", "Extra High")
     THINKING_MODE_TOGGLE_MODELS = {"gemini-2.5-flash", "gemini-2.5-flash-lite"}
     THINKING_BUDGET_BY_MODEL: Dict[str, Dict[str, Optional[int]]] = {
         "gemini-2.5-pro": {
@@ -382,6 +390,21 @@ class AIStudioDriver(BaseDriver):
         "gemini-2.5-flash-lite": (512, 24576),
     }
     MODEL_CONFIGS: Dict[str, Dict[str, Any]] = {
+        "Gemini 4 Carbon": {
+            "base_id": "gemini-4-carbon",
+            "selector_id": "model-carousel-row-models/gemini-4-carbon",
+            "is_paid": True,
+            "supports_temperature": False,
+            "supports_top_p": False,
+            "max_output_tokens": 1048576,
+        },
+        "Gemini 4 Hydrogen": {
+            "base_id": "gemini-4-hydrogen",
+            "selector_id": "model-carousel-row-models/gemini-4-hydrogen",
+            "supports_temperature": False,
+            "supports_top_p": False,
+            "max_output_tokens": 1048576,
+        },
         "Gemini 4 Argon": {
             "base_id": "gemini-4-argon",
             "selector_id": "model-carousel-row-models/gemini-4-argon",
@@ -480,6 +503,10 @@ class AIStudioDriver(BaseDriver):
         "r2": ("thinking_level_macro", "r2"),
         "r3": ("thinking_level_macro", "r3"),
         "r4": ("thinking_level_macro", "r4"),
+        "r5": ("thinking_level_macro", "r5"),
+        "extrahigh": ("thinking_level_macro", "extrahigh"),
+        "extra-high": ("thinking_level_macro", "extra-high"),
+        "xhigh": ("thinking_level_macro", "xhigh"),
         "search": ("search_enabled", True),
         "nosearch": ("search_enabled", False),
         "no_search": ("search_enabled", False),
@@ -1277,11 +1304,11 @@ class AIStudioDriver(BaseDriver):
     _paid_gemini_25_access_allowed_for_current_account = _paid_model_access_allowed_for_current_account
 
     def _paid_model_error(self, model_label: str = "") -> str:
-        name = model_label or "Gemini 2.5"
+        name = model_label or "Selected"
         if not self._assume_paid_model_access_enabled():
             return (
-                f"{self.GEMINI_25_PAID_MODEL_ERROR} Enable Assume Paid Model Access only "
-                "for AI Studio accounts that you know can use Gemini 2.5."
+                f"{name} models require paid access in Google AI Studio, and IRP can't serve them. "
+                "Enable Assume Paid Model Access only for AI Studio accounts that you know have paid model access."
             )
 
         allowed_emails = self._paid_model_access_emails()
@@ -1294,7 +1321,7 @@ class AIStudioDriver(BaseDriver):
                 f"{account_label} is not listed in Paid Model Access Emails."
             )
 
-        return self.GEMINI_25_PAID_MODEL_ERROR
+        return self.PAID_MODEL_ERROR
 
     _paid_gemini_25_model_error = _paid_model_error
 
@@ -1596,6 +1623,8 @@ class AIStudioDriver(BaseDriver):
             return "Medium"
         if normalized == "high":
             return "High"
+        if normalized in {"extra high", "extra-high", "extrahigh", "xhigh", "x-high"}:
+            return "Extra High"
         return ""
 
     def _configured_thinking_level(self) -> str:
@@ -1631,13 +1660,13 @@ class AIStudioDriver(BaseDriver):
 
     @classmethod
     def _resolve_macro_thinking_level(cls, token: str, model_base_id: str) -> str:
-        """Map macro tokens like ``r1``-``r4`` onto model-supported thinking levels."""
+        """Map macro tokens like ``r1``-``r5`` onto model-supported thinking levels."""
         normalized = str(token or "").strip().lower()
         supported = cls.THINKING_LEVELS_BY_MODEL.get(str(model_base_id or "").strip().lower()) or ()
         if not supported:
             return ""
 
-        if normalized in {"minimal", "low", "medium", "high"}:
+        if normalized in {"minimal", "low", "medium", "high", "extra high", "extra-high", "extrahigh", "xhigh", "x-high"}:
             wanted = cls._normalize_thinking_level(normalized)
             return cls._closest_supported_thinking_level(wanted, supported)
 
@@ -1648,6 +1677,8 @@ class AIStudioDriver(BaseDriver):
         if normalized == "r3":
             return supported[2] if len(supported) > 2 else supported[-1]
         if normalized == "r4":
+            return supported[3] if len(supported) > 3 else supported[-1]
+        if normalized == "r5":
             return supported[-1]
         return ""
 

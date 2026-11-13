@@ -1891,6 +1891,8 @@ SCHEMA = [
                 type=SettingType.DROPDOWN,
                 default="Gemini 3.1 Pro",
                 options=[
+                    "Gemini 4 Carbon",
+                    "Gemini 4 Hydrogen",
                     "Gemini 4 Argon",
                     "Gemini 3.8 Flash",
                     "Gemini 3.7 Flash",
@@ -1926,7 +1928,7 @@ SCHEMA = [
                 label="Thinking Level",
                 type=SettingType.DROPDOWN,
                 default="Medium",
-                options=["Minimal", "Low", "Medium", "High"],
+                options=["Minimal", "Low", "Medium", "High", "Extra High"],
                 tooltip=(
                     "Thinking level for supported AI Studio models. "
                     "Gemini 2.5 Flash, Flash Lite, and Pro map this to the thinking budget."
@@ -2051,6 +2053,8 @@ SCHEMA = [
                 type=SettingType.DROPDOWN,
                 default="Gemini 3.1 Flash Lite",
                 options=[
+                    "Gemini 4 Carbon",
+                    "Gemini 4 Hydrogen",
                     "Gemini 4 Argon",
                     "Gemini 3.8 Flash",
                     "Gemini 3.7 Flash",
@@ -2226,15 +2230,15 @@ SCHEMA = [
                 type=SettingType.BOOLEAN,
                 default=False,
                 tooltip=(
-                    "Allow Gemini 2.5 models in Google AI Studio. Only enable this when you are "
-                    "absolutely sure the active AI Studio account has paid model access."
+                    "Allow paid models (such as Gemini 4 Carbon and Gemini 2.5) in Google AI Studio. "
+                    "Only enable this when you are absolutely sure the active AI Studio account has paid model access."
                 ),
                 docs_path=DOCS_AISTUDIO,
                 docs_anchor="assume-paid-model-access",
             ),
             SettingField(
                 key="assume_paid_model_access_warning",
-                label="Only for accounts you know can use Gemini 2.5",
+                label="Only for accounts you know have paid model access",
                 type=SettingType.HINT,
                 default=(
                     "This does not buy access or bypass AI Studio account limits. If the email list "
@@ -2253,8 +2257,8 @@ SCHEMA = [
                 type=SettingType.INPUT_LIST,
                 default=[],
                 tooltip=(
-                    "Optional list of Google account emails that can use paid Gemini 2.5 models "
-                    "in AI Studio. Leave empty to assume all AI Studio accounts have access."
+                    "Optional list of Google account emails that can use paid models (such as Gemini 4 Carbon and "
+                    "Gemini 2.5) in AI Studio. Leave empty to assume all AI Studio accounts have access."
                 ),
                 validator=validate_email_list,
                 depends="aistudio_behavior.assume_paid_model_access",

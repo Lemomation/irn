@@ -122,7 +122,9 @@ OWNED_BY_PROVIDER: Dict[DriverProvider, str] = {
     DriverProvider.MIMO: "mimo",
 }
 
-AISTUDIO_MODEL_OVERRIDE_SUFFIX_RE = re.compile(r"-(minimal|low|medium|high|r[0-4])$")
+AISTUDIO_MODEL_OVERRIDE_SUFFIX_RE = re.compile(
+    r"-(minimal|low|medium|high|extra-high|extrahigh|xhigh|r[0-5])$"
+)
 
 
 def get_legacy_model_ids(provider: DriverProvider) -> list[str]:

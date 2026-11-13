@@ -148,8 +148,13 @@ Controls the level IntenseRP selects on supported AI Studio models:
 - `Low`
 - `Medium`
 - `High`
+- `Extra High` (available on Gemini 4 Hydrogen)
 
 :material-arrow-right: **Settings** -> **Provider Behavior** -> **Google AI Studio** -> **Thinking Level**
+
+!!! note "Gemini 4 Hydrogen and Carbon"
+    **Gemini 4 Hydrogen** supports `Low`, `Medium`, `High` (default), and `Extra High`.
+    **Gemini 4 Carbon** is a paid model supporting `Low`, `Medium` (default), and `High`.
 
 !!! note "Gemini 2.5 Flash, Flash Lite, and Pro"
     Gemini 2.5 Flash, Flash Lite, and Pro use a manual thinking budget instead of the newer Thinking Level dropdown.
