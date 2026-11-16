@@ -299,10 +299,23 @@ class QwenLMDriver(BaseDriver):
     SEND_BUTTON_SELECTOR = "div.chat-prompt-send-button button"
     FILE_INPUT_SELECTOR = "input#filesUpload"
 
-    SIDEBAR_SELECTOR = "div.sidebar"
-    SIDEBAR_OPEN_BUTTON_SELECTOR = "button.slide-switch, button[aria-label='Toggle sidebar'], div.sidebar-side-fold-container-open"
-    SIDEBAR_CLOSE_BUTTON_SELECTOR = "button.slide-switch, button[aria-label='Toggle sidebar'], button.sidebar-toggle-button"
-    NEW_CHAT_BUTTON_SELECTOR = "div.sidebar-entry-fixed-list-content"
+    SIDEBAR_SELECTOR = "div.sidebar, aside, [class*='sidebar-container'], [class*='sidebar_']"
+    SIDEBAR_OPEN_BUTTON_SELECTOR = (
+        "button.slide-switch, button[aria-label*='sidebar' i], button[title*='sidebar' i], "
+        "div.sidebar-side-fold-container-open, [class*='sidebar-toggle'], [class*='sidebarToggle']"
+    )
+    SIDEBAR_CLOSE_BUTTON_SELECTOR = (
+        "button.slide-switch, button[aria-label*='sidebar' i], button[title*='sidebar' i], "
+        "button.sidebar-toggle-button, [class*='sidebar-toggle'], [class*='sidebarToggle']"
+    )
+    NEW_CHAT_BUTTON_SELECTOR = (
+        "div.sidebar-entry-fixed-list-content, "
+        "div[class*='sidebar'] [role='button'], "
+        "div[class*='sidebar'] button, "
+        "div[class*='sidebar'] a, "
+        "aside [role='button'], aside button, aside a, "
+        "[class*='new-chat' i], [class*='newChat' i]"
+    )
     NEW_CHAT_LOOKUP_TIMEOUT_MS = 5000
     NEW_CHAT_LOOKUP_POLL_INTERVAL_S = 0.15
 
@@ -1035,6 +1048,15 @@ class QwenLMDriver(BaseDriver):
 
         return self._parse_conversation_info_from_url(current_url)
 
+    def _is_in_conversation(self) -> bool:
+        if not self.page:
+            return False
+        try:
+            current_url = str(self.page.url or "")
+            return bool(self._parse_conversation_info_from_url(current_url))
+        except Exception:
+            return False
+
     async def _wait_for_current_conversation_info(
         self,
         timeout_ms: int = 6000,
@@ -1132,7 +1154,7 @@ class QwenLMDriver(BaseDriver):
         if not self.page:
             return False
 
-        target_url = f"{self.CHAT_URL}c/new-chat"
+        target_url = self.CHAT_URL
         try:
             await self.page.goto(target_url, wait_until="domcontentloaded", timeout=45000)
         except Exception as e:
@@ -1145,7 +1167,15 @@ class QwenLMDriver(BaseDriver):
             Logger.warning(f"QwenLM: new-chat route loaded, but chat UI was not ready: {e}")
             return False
 
-        return True
+        if self._is_in_conversation():
+            Logger.warning("QwenLM: still in conversation after navigation; forcing reload of home URL...")
+            try:
+                await self.page.goto(self.CHAT_URL, wait_until="networkidle", timeout=30000)
+                await self._wait_for_chat_ready(timeout_ms=30000)
+            except Exception as e:
+                Logger.warning(f"QwenLM: secondary navigation failed: {e}")
+
+        return not self._is_in_conversation()
 
     async def _try_multi_slot_regeneration(
         self,
@@ -1991,137 +2021,154 @@ class QwenLMDriver(BaseDriver):
         if not self.page:
             return False
 
+        try:
+            loc = self.page.locator("text=/^\\s*New Chat\\s*$/i, text=/^\\s*Search Chats\\s*$/i")
+            if await loc.count() > 0 and await loc.first.is_visible():
+                return True
+        except Exception:
+            pass
+
         sidebar = self.page.locator(self.SIDEBAR_SELECTOR)
         if await sidebar.count() == 0:
             return False
 
         try:
             state_attr = str(await sidebar.first.get_attribute("data-state") or "").strip().lower()
+            if state_attr:
+                return state_attr == "true"
         except Exception:
             return False
 
-        return state_attr == "true"
+        return False
 
     async def _click_new_chat_entry(self) -> bool:
         if not self.page:
             return False
 
-        exact_label_matches = self.page.locator(self.NEW_CHAT_BUTTON_SELECTOR, has_text="New Chat")
-        try:
-            exact_count = await exact_label_matches.count()
-        except Exception:
-            exact_count = 0
+        was_in_convo = self._is_in_conversation()
 
-        for idx in range(min(exact_count, 6)):
-            label = exact_label_matches.nth(idx)
+        locators_to_try = [
+            self.page.locator("text=/^\\s*New Chat\\s*$/i"),
+            self.page.locator("button:has-text('New Chat'), button:has-text('New chat')"),
+            self.page.locator("a:has-text('New Chat'), a:has-text('New chat')"),
+            self.page.locator("div[role='button']:has-text('New Chat'), div[role='button']:has-text('New chat')"),
+            self.page.locator("li:has-text('New Chat'), li:has-text('New chat')"),
+            self.page.locator("[aria-label*='New Chat' i], [aria-label*='New chat' i]"),
+            self.page.locator("[title*='New Chat' i], [title*='New chat' i]"),
+            self.page.locator("[class*='new-chat' i], [class*='newChat' i]"),
+            self.page.locator(self.NEW_CHAT_BUTTON_SELECTOR),
+        ]
+
+        for locator in locators_to_try:
             try:
-                if not await label.is_visible():
-                    continue
+                count = await locator.count()
             except Exception:
                 continue
 
-            targets = [
-                label.locator("xpath=.."),
-                label,
-            ]
-
-            for target in targets:
+            for idx in range(min(count, 6)):
+                el = locator.nth(idx)
                 try:
-                    if await target.count() == 0:
+                    if not await el.is_visible():
                         continue
                 except Exception:
                     continue
 
-                candidate = target.first
-                try:
-                    await candidate.scroll_into_view_if_needed(timeout=1500)
-                except Exception:
-                    pass
+                targets = [
+                    el.locator("xpath=ancestor-or-self::button | ancestor-or-self::a | ancestor-or-self::div[@role='button'] | ancestor-or-self::li"),
+                    el.locator("xpath=.."),
+                    el,
+                ]
 
-                try:
-                    await candidate.click(timeout=3000)
-                    return True
-                except Exception:
+                for target in targets:
                     try:
-                        await candidate.click(timeout=3000, force=True)
-                        return True
+                        if await target.count() == 0:
+                            continue
                     except Exception:
                         continue
 
+                    candidate = target.first
+                    try:
+                        await candidate.scroll_into_view_if_needed(timeout=1000)
+                    except Exception:
+                        pass
+
+                    clicked = False
+                    try:
+                        await candidate.click(timeout=2000)
+                        clicked = True
+                    except Exception:
+                        try:
+                            await candidate.click(timeout=2000, force=True)
+                            clicked = True
+                        except Exception:
+                            continue
+
+                    if clicked:
+                        if was_in_convo:
+                            for _ in range(15):
+                                await asyncio.sleep(0.1)
+                                if not self._is_in_conversation():
+                                    return True
+                        else:
+                            await asyncio.sleep(0.2)
+                            return True
+
+        # JS evaluate fallback
         try:
             clicked = await self.page.evaluate(
-                "(fixedSel) => {"
-                "  const isVisible = (el) => {"
-                "    try {"
-                "      if (!el) return false;"
-                "      const rect = el.getBoundingClientRect();"
-                "      if (!rect || rect.width <= 0 || rect.height <= 0) return false;"
-                "      const style = window.getComputedStyle(el);"
-                "      if (!style) return false;"
-                "      if (style.visibility === 'hidden' || style.display === 'none') return false;"
-                "      return true;"
-                "    } catch (e) { return false; }"
-                "  };"
-                "  const normalize = (value) => (value || '').toString().replace(/\\s+/g, ' ').trim().toLowerCase();"
-                "  const readLabel = (el) => {"
-                "    const bits = [];"
-                "    const push = (value) => {"
-                "      const text = normalize(value);"
-                "      if (text) bits.push(text);"
-                "    };"
-                "    let current = el;"
-                "    for (let depth = 0; current && depth < 3; depth += 1, current = current.parentElement) {"
-                "      push(current.textContent);"
-                "      push(current.getAttribute && current.getAttribute('aria-label'));"
-                "      push(current.getAttribute && current.getAttribute('title'));"
-                "    }"
-                "    return bits.join(' ').trim();"
-                "  };"
-                "  const clickCandidate = (el) => {"
-                "    const targets = ["
-                "      el.parentElement,"
-                "      el.closest('[role=\"button\"]'),"
-                "      el.closest('a'),"
-                "      el,"
-                "    ].filter(Boolean);"
-                "    for (const target of targets) {"
-                "      try { target.scrollIntoView({ block: 'center', inline: 'center' }); } catch (e) {}"
-                "      try { target.click(); return true; } catch (e) {}"
-                "    }"
-                "    return false;"
-                "  };"
-                "  const candidates = [];"
-                "  for (const el of Array.from(document.querySelectorAll(fixedSel))) {"
-                "    if (!isVisible(el)) continue;"
-                "    candidates.push({ el, label: readLabel(el) });"
-                "  }"
-                "  if (!candidates.length) return false;"
-                "  const scored = candidates"
-                "    .map((candidate, index) => {"
-                "      const label = candidate.label;"
-                "      let score = 0;"
-                "      if (label.includes('new chat')) score += 1000;"
-                "      else if (label.includes('new')) score += 300;"
-                "      if (label.includes('chat')) score += 150;"
-                "      if (label.includes('community')) score -= 1200;"
-                "      if (label.includes('discover')) score -= 800;"
-                "      if (label.includes('explore')) score -= 600;"
-                "      return { ...candidate, index, score };"
-                "    })"
-                "    .sort((left, right) => (right.score - left.score) || (left.index - right.index));"
-                "  for (const candidate of scored) {"
-                "    if (candidate.score < 0) continue;"
-                "    if (clickCandidate(candidate.el)) return true;"
-                "  }"
-                "  return false;"
-                "}",
-                self.NEW_CHAT_BUTTON_SELECTOR,
+                """() => {
+                    const isVisible = (el) => {
+                        try {
+                            if (!el) return false;
+                            const rect = el.getBoundingClientRect();
+                            if (!rect || rect.width <= 0 || rect.height <= 0) return false;
+                            const style = window.getComputedStyle(el);
+                            if (!style || style.visibility === 'hidden' || style.display === 'none') return false;
+                            return true;
+                        } catch (e) { return false; }
+                    };
+                    const normalize = (val) => (val || '').toString().replace(/\\s+/g, ' ').trim().toLowerCase();
+
+                    const allElements = Array.from(document.querySelectorAll('button, a, [role="button"], div, span, li'));
+                    for (const el of allElements) {
+                        if (!isVisible(el)) continue;
+                        const text = normalize(el.textContent);
+                        const aria = normalize(el.getAttribute('aria-label'));
+                        const title = normalize(el.getAttribute('title'));
+                        if (text === 'new chat' || aria === 'new chat' || title === 'new chat') {
+                            const target = el.closest('button, a, [role="button"], li') || el.parentElement || el;
+                            try { target.scrollIntoView({ block: 'center', inline: 'center' }); } catch (e) {}
+                            try { target.click(); return true; } catch (e) {}
+                        }
+                    }
+
+                    // Try home logo link as well
+                    const homeElements = Array.from(document.querySelectorAll('a[href="/"], [class*="logo"] a, [class*="logo"]'));
+                    for (const el of homeElements) {
+                        if (!isVisible(el)) continue;
+                        const r = el.getBoundingClientRect();
+                        if (r.top >= 0 && r.top < 100 && r.left < 200) {
+                            try { el.click(); return true; } catch (e) {}
+                        }
+                    }
+
+                    return false;
+                }"""
             )
+            if clicked:
+                if was_in_convo:
+                    for _ in range(15):
+                        await asyncio.sleep(0.1)
+                        if not self._is_in_conversation():
+                            return True
+                else:
+                    await asyncio.sleep(0.2)
+                    return True
         except Exception as e:
             Logger.debug(f"QwenLM: failed to evaluate new-chat candidates: {e}")
             return False
 
-        return bool(clicked)
+        return False
 
     async def click_new_chat(self, source: str = "auto") -> None:
         if not self.page:
@@ -2140,9 +2187,10 @@ class QwenLMDriver(BaseDriver):
         deadline = time.monotonic() + (self.NEW_CHAT_LOOKUP_TIMEOUT_MS / 1000.0)
         while True:
             if await self._click_new_chat_entry():
-                return
+                if not self._is_in_conversation():
+                    Logger.info("QwenLM: successfully started a new chat via UI click.")
+                    return
 
-            # Qwen can render the fixed sidebar entries a moment after the rest of the chat UI
             if allow_sidebar_open and not sidebar_open_attempted:
                 if not await self._is_sidebar_open():
                     await self.set_sidebar_status(open=True)
@@ -2155,11 +2203,11 @@ class QwenLMDriver(BaseDriver):
             await asyncio.sleep(self.NEW_CHAT_LOOKUP_POLL_INTERVAL_S)
 
         Logger.warning(
-            "QwenLM: New Chat button not found before timeout "
+            "QwenLM: New Chat button not found or click did not exit conversation before timeout "
             f"({self.NEW_CHAT_LOOKUP_TIMEOUT_MS} ms). Trying route fallback..."
         )
         if await self._open_new_chat_route():
-            Logger.info("QwenLM: opened a new chat via /c/new-chat route fallback.")
+            Logger.info("QwenLM: opened a new chat via route fallback.")
             return
 
         Logger.warning("QwenLM: route fallback for New Chat also failed.")
@@ -4140,6 +4188,14 @@ class QwenLMDriver(BaseDriver):
                 Logger.info("QwenLM: preparing new chat session...")
                 await self.click_new_chat(source="auto")
                 await asyncio.sleep(0.35)
+
+                if self._is_in_conversation():
+                    Logger.warning(
+                        "QwenLM: still in existing conversation after click_new_chat. "
+                        "Forcing navigation to new chat URL..."
+                    )
+                    await self._open_new_chat_route()
+                    await asyncio.sleep(0.35)
 
                 await self.apply_configured_model(model=resolved_model)
 
