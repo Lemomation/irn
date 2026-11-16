@@ -1,8 +1,8 @@
 {
-  "version": "2.9.7",
+  "version": "2.9.7-rev1",
   "aua": true,
   "severity": 3,
   "pu": "none",
   "pufref": "none",
-  "summary": "Added support for Qwen 4 Max Preview, Google AI Studio's Gemini 4 Carbon and Hydrogen, DeepSeek Humanize Mouse Movements (with default CDP Teeing), and auto-dismissal for Z.ai's new interface walkthrough modal"
+  "summary": "Updated Qwen to official Qwen4-Max with default CDP Teeing and fixed new chat isolation. Added modern Kimi.ai models (K3.1 Pro, K2.8 Preview, Instant), Thinking Effort and Context Length controls, fixed search check freeze, and added capacity modal recovery. Added Ko-fi link and refreshed contributors list."
 }
