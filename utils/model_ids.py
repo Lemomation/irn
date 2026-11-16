@@ -570,6 +570,53 @@ def _resolve_mimo_deprecated_model_alias(normalized: str) -> str | None:
     return match
 
 
+MOONSHOT_MODEL_OVERRIDE_SUFFIX_RE = re.compile(
+    r"-(max|maximum|high|med|medium|low|std|standard|xhigh|extra-high|extrahigh|1m|xl|extralong|extra-long)$"
+)
+
+MOONSHOT_DEPRECATED_MODEL_ALIASES: Dict[str, str] = {
+    "k3": "Kimi K3",
+    "kimi-k3": "Kimi K3",
+    "k3-agent": "Kimi K3",
+    "instant": "Instant",
+    "kimi-instant": "Instant",
+    "k3-1-pro": "K3.1 Pro",
+    "k3-1": "K3.1 Pro",
+    "k3.1": "K3.1 Pro",
+    "k3.1-pro": "K3.1 Pro",
+    "k3d1": "K3.1 Pro",
+    "k3d1-agent": "K3.1 Pro",
+    "k2.8": "K2.8 Preview",
+    "k2-8": "K2.8 Preview",
+    "k28": "K2.8 Preview",
+    "k28-preview": "K2.8 Preview",
+    "k2.8-preview": "K2.8 Preview",
+    "k3-swarm": "K3.1 Pro",
+    "kimi-k3-swarm": "K3.1 Pro",
+    "k2.6-thinking": "K3.1 Pro",
+    "k2-6-thinking": "K3.1 Pro",
+    "thinking": "K3.1 Pro",
+}
+
+
+def _resolve_moonshot_deprecated_model_alias(normalized: str) -> str | None:
+    base = normalized
+    for suffix, _ in REAL_MODEL_SUFFIX_MODE_BY_SUFFIX:
+        if base.endswith(suffix) and len(base) > len(suffix):
+            base = base[:-len(suffix)]
+            break
+    base = MOONSHOT_MODEL_OVERRIDE_SUFFIX_RE.sub("", base)
+    if base.startswith("moonshot-"):
+        base = base[len("moonshot-"):]
+    elif base.startswith("kimi-"):
+        base = base[len("kimi-"):]
+
+    match = MOONSHOT_DEPRECATED_MODEL_ALIASES.get(base)
+    if match is None and "." in base:
+        match = MOONSHOT_DEPRECATED_MODEL_ALIASES.get(base.replace(".", "-"))
+    return match
+
+
 def resolve_real_model_label_from_model_id(
     provider: DriverProvider,
     model: Any,
@@ -599,6 +646,8 @@ def resolve_real_model_label_from_model_id(
         res = _resolve_glm_deprecated_model_alias(normalized)
     if res is None and provider == DriverProvider.MIMO:
         res = _resolve_mimo_deprecated_model_alias(normalized)
+    if res is None and provider == DriverProvider.MOONSHOT:
+        res = _resolve_moonshot_deprecated_model_alias(normalized)
     return res
 
 

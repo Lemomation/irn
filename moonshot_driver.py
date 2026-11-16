@@ -38,6 +38,27 @@ from utils.model_ids import (
 load_dotenv()
 
 
+MOONSHOT_REQUEST_MACRO_ACTIONS: Dict[str, tuple[str, Any]] = {
+    **COMMON_REQUEST_MACRO_ACTIONS,
+    # Thinking effort
+    "effort:standard": ("deepthink_effort", "Standard"),
+    "effort:high": ("deepthink_effort", "High"),
+    "effort:max": ("deepthink_effort", "Max"),
+    "standard": ("deepthink_effort", "Standard"),
+    "high": ("deepthink_effort", "High"),
+    "max": ("deepthink_effort", "Max"),
+    "xhigh": ("deepthink_effort", "Max"),
+    # Context length
+    "context:standard": ("context_length", "Standard"),
+    "context:1m": ("context_length", "Extra Long (1M tokens)"),
+    "context:xl": ("context_length", "Extra Long (1M tokens)"),
+    "1m": ("context_length", "Extra Long (1M tokens)"),
+    "xl": ("context_length", "Extra Long (1M tokens)"),
+    "extralong": ("context_length", "Extra Long (1M tokens)"),
+    "extra-long": ("context_length", "Extra Long (1M tokens)"),
+}
+
+
 class MoonshotDriver(BaseDriver):
     REQUEST_CAPTURE_MODE_REPLAY = "replay"
     REQUEST_CAPTURE_MODE_CDP_TEEING = "cdp_teeing"
@@ -124,29 +145,44 @@ class MoonshotDriver(BaseDriver):
             return True
         return False
 
+    MODEL_K31_PRO = "K3.1 Pro"
+    MODEL_K28_PREVIEW = "K2.8 Preview"
     MODEL_INSTANT = "Instant"
+    MODEL_K3 = "Kimi K3"
+    # Retired / fallback constants
     MODEL_THINKING = "K2.6 Thinking"
     MODEL_K28 = "K2.8"
-    MODEL_K3 = "Kimi K3"
     MODEL_K3_SWARM = "Kimi K3 Swarm"
+
+    EFFORT_STANDARD = "Standard"
+    EFFORT_HIGH = "High"
+    EFFORT_MAX = "Max"
+    EFFORT_OPTIONS = (EFFORT_STANDARD, EFFORT_HIGH, EFFORT_MAX)
+
+    CONTEXT_STANDARD = "Standard"
+    CONTEXT_EXTRA_LONG = "Extra Long (1M tokens)"
+    CONTEXT_OPTIONS = (CONTEXT_STANDARD, CONTEXT_EXTRA_LONG)
+
     # Picker labels change between Kimi rollouts ("K2.6 Instant" -> "Instant"),
     # so each known model maps to accepted normalized-name aliases.
-    # "Instant" and "K2.8" are separate picker entries: K2.8 must select the
-    # K2.8 entry, not be treated as a stand-in for Instant.
     MODEL_MATCH_ALIASES = {
-        "instant": ("instant",),
-        "k2.6 instant": ("instant",),
-        "kimi instant": ("instant",),
-        "thinking": ("thinking",),
-        "k2.6 thinking": ("thinking",),
-        "kimi thinking": ("thinking",),
-        "k2.8": ("k2.8", "k2.8 preview", "kimi k2.8"),
-        "k2.8 preview": ("k2.8", "k2.8 preview", "kimi k2.8"),
-        "kimi k2.8": ("k2.8", "k2.8 preview", "kimi k2.8"),
-        "kimi k3": ("kimi k3", "k3"),
-        "k3": ("k3",),
-        "kimi k3 swarm": ("kimi k3 swarm", "k3 swarm"),
-        "k3 swarm": ("k3 swarm",),
+        "instant": ("instant", "kimi instant", "k2.6 instant"),
+        "k2.6 instant": ("instant", "kimi instant", "k2.6 instant"),
+        "kimi instant": ("instant", "kimi instant", "k2.6 instant"),
+        "thinking": ("k3.1 pro", "k3.1", "thinking", "k2.6 thinking"),
+        "k2.6 thinking": ("k3.1 pro", "k3.1", "thinking", "k2.6 thinking"),
+        "kimi thinking": ("k3.1 pro", "k3.1", "thinking", "k2.6 thinking"),
+        "k3.1 pro": ("k3.1 pro", "k3.1", "k3-1-pro", "k3-1", "k3d1-agent", "k3d1", "kimi k3.1 pro"),
+        "k3.1": ("k3.1 pro", "k3.1", "k3-1-pro", "k3-1", "k3d1-agent", "k3d1", "kimi k3.1 pro"),
+        "kimi k3.1 pro": ("k3.1 pro", "k3.1", "k3-1-pro", "k3-1", "k3d1-agent", "k3d1", "kimi k3.1 pro"),
+        "kimi k3.1": ("k3.1 pro", "k3.1", "k3-1-pro", "k3-1", "k3d1-agent", "k3d1", "kimi k3.1 pro"),
+        "k2.8 preview": ("k2.8 preview", "k2.8", "k2-8-preview", "k2-8", "k28-preview", "k28", "kimi k2.8"),
+        "k2.8": ("k2.8 preview", "k2.8", "k2-8-preview", "k2-8", "k28-preview", "k28", "kimi k2.8"),
+        "kimi k2.8": ("k2.8 preview", "k2.8", "k2-8-preview", "k2-8", "k28-preview", "k28", "kimi k2.8"),
+        "kimi k3": ("kimi k3", "k3", "k3-agent"),
+        "k3": ("kimi k3", "k3", "k3-agent"),
+        "kimi k3 swarm": ("kimi k3 swarm", "k3 swarm", "k3.1 pro"),
+        "k3 swarm": ("kimi k3 swarm", "k3 swarm", "k3.1 pro"),
     }
     MODEL_CHAT_API = "moonshot-chat"
     MODEL_REASONER_API = "moonshot-reasoner"
@@ -185,6 +221,8 @@ class MoonshotDriver(BaseDriver):
 
         self.current_model = None
         self.current_ui_model = ""
+        self.current_deepthink_effort = ""
+        self.current_context_length = ""
         self.current_send_deepthink = None
         self.thinking_active = False
         self._search_ui_unavailable_warned = False
@@ -1438,7 +1476,62 @@ class MoonshotDriver(BaseDriver):
         self._mark_active_ece_pair_used()
 
     def api_real_model_labels(self) -> list[str]:
-        return [self.MODEL_INSTANT, self.MODEL_K28, self.MODEL_K3, self.MODEL_K3_SWARM]
+        return [
+            self.MODEL_K31_PRO,
+            self.MODEL_K28_PREVIEW,
+            self.MODEL_INSTANT,
+            self.MODEL_K3,
+            self.MODEL_K28,
+            self.MODEL_K3_SWARM,
+        ]
+
+    @classmethod
+    def _model_supports_thinking_effort(cls, model_label: str) -> bool:
+        norm = cls._normalize_text(model_label)
+        return not (norm == cls._normalize_text(cls.MODEL_INSTANT))
+
+    @classmethod
+    def _model_supports_context_length(cls, model_label: str) -> bool:
+        norm = cls._normalize_text(model_label)
+        return not (norm == cls._normalize_text(cls.MODEL_INSTANT))
+
+    def _get_configured_deepthink_effort(self) -> str:
+        try:
+            val = self.config_manager.get_setting("moonshot_behavior", "deepthink_effort")
+        except Exception:
+            val = None
+        return self._normalize_kimi_effort(val)
+
+    def _get_configured_context_length(self) -> str:
+        try:
+            val = self.config_manager.get_setting("moonshot_behavior", "context_length")
+        except Exception:
+            val = None
+        return self._normalize_kimi_context_length(val)
+
+    @classmethod
+    def _normalize_kimi_effort(cls, value: Any, default: str | None = None) -> str:
+        fallback = default or cls.EFFORT_HIGH
+        norm = str(value or "").strip().lower()
+        if not norm:
+            return fallback
+        if norm in {"standard", "std", "low", "default"}:
+            return cls.EFFORT_STANDARD
+        if norm in {"high", "med", "medium"}:
+            return cls.EFFORT_HIGH
+        if norm in {"max", "maximum", "xhigh", "extra-high", "extrahigh"}:
+            return cls.EFFORT_MAX
+        return fallback
+
+    @classmethod
+    def _normalize_kimi_context_length(cls, value: Any, default: str | None = None) -> str:
+        fallback = default or cls.CONTEXT_STANDARD
+        norm = str(value or "").strip().lower()
+        if not norm:
+            return fallback
+        if "1m" in norm or "extra" in norm or "xl" in norm or "long" in norm:
+            return cls.CONTEXT_EXTRA_LONG
+        return cls.CONTEXT_STANDARD
 
     def _get_moonshot_model_label_for_request(self, model: Any = None) -> str:
         """Resolve a picker label from an API model ID (e.g. kimi-k3-reasoner)."""
@@ -1483,18 +1576,55 @@ class MoonshotDriver(BaseDriver):
             or "thinking" in norm
         )
 
-    def _resolve_moonshot_request_settings(self, model: str, overrides: Optional[Dict[str, bool]] = None) -> Dict[str, bool]:
-        _ = (model or "").strip() or "moonshot-auto"
-        ui_model_label = self._get_moonshot_model_label_for_request(model)
+    def _resolve_moonshot_request_settings(
+        self,
+        model: str,
+        overrides: Optional[Dict[str, Any]] = None,
+    ) -> Dict[str, Any]:
+        resolved_model = (model or "").strip() or "moonshot-auto"
+        ui_model_label = self._get_moonshot_model_label_for_request(resolved_model)
         if not ui_model_label:
             ui_model_label = self._get_configured_model_friendly()
-        deepthink_enabled, send_deepthink = self._resolve_deepthink_flags(model, ui_model_label)
+        deepthink_enabled, send_deepthink = self._resolve_deepthink_flags(resolved_model, ui_model_label)
         search_enabled = bool(self.config_manager.get_setting("moonshot_behavior", "enable_search"))
         send_as_text_file = bool(self.config_manager.get_setting("moonshot_behavior", "send_as_text_file"))
+
+        # Extract effort & context length overrides from model name suffixes if present
+        model_lower = resolved_model.lower()
+        model_effort_override = None
+        if "-max" in model_lower or "-xhigh" in model_lower:
+            model_effort_override = self.EFFORT_MAX
+        elif "-high" in model_lower:
+            model_effort_override = self.EFFORT_HIGH
+        elif "-standard" in model_lower:
+            model_effort_override = self.EFFORT_STANDARD
+
+        model_context_override = None
+        if "-1m" in model_lower or "-xl" in model_lower or "-extralong" in model_lower:
+            model_context_override = self.CONTEXT_EXTRA_LONG
+        elif "-standard-context" in model_lower:
+            model_context_override = self.CONTEXT_STANDARD
+
+        effort_override = None
+        if overrides and "deepthink_effort" in overrides:
+            effort_override = self._normalize_kimi_effort(overrides["deepthink_effort"])
+        elif model_effort_override:
+            effort_override = model_effort_override
+
+        context_override = None
+        if overrides and "context_length" in overrides:
+            context_override = self._normalize_kimi_context_length(overrides["context_length"])
+        elif model_context_override:
+            context_override = model_context_override
+
+        deepthink_effort = effort_override or self._get_configured_deepthink_effort()
+        context_length = context_override or self._get_configured_context_length()
 
         settings = {
             "deepthink_enabled": bool(deepthink_enabled),
             "send_deepthink": bool(send_deepthink),
+            "deepthink_effort": str(deepthink_effort),
+            "context_length": str(context_length),
             "search_enabled": bool(search_enabled),
             "send_as_text_file": bool(send_as_text_file),
             "ui_model": str(ui_model_label or "").strip(),
@@ -1536,20 +1666,20 @@ class MoonshotDriver(BaseDriver):
         path = str(parsed.path or "")
         return any(path.startswith(prefix) for prefix in cls.COMPLETION_URL_PATH_PREFIXES)
 
-    def _extract_moonshot_macros_from_text(self, text: str) -> tuple[str, Dict[str, bool]]:
-        return extract_macro_overrides(text, macro_actions=COMMON_REQUEST_MACRO_ACTIONS)
+    def _extract_moonshot_macros_from_text(self, text: str) -> tuple[str, Dict[str, Any]]:
+        return extract_macro_overrides(text, macro_actions=MOONSHOT_REQUEST_MACRO_ACTIONS)
 
-    def _strip_moonshot_macros_from_messages(self, messages: List[Any]) -> tuple[List[Any], Dict[str, bool]]:
-        return strip_macros_from_messages(messages, macro_actions=COMMON_REQUEST_MACRO_ACTIONS)
+    def _strip_moonshot_macros_from_messages(self, messages: List[Any]) -> tuple[List[Any], Dict[str, Any]]:
+        return strip_macros_from_messages(messages, macro_actions=MOONSHOT_REQUEST_MACRO_ACTIONS)
 
-    def _read_clean_regeneration_state(self) -> Optional[Dict[str, bool]]:
+    def _read_clean_regeneration_state(self) -> Optional[Dict[str, Any]]:
         return read_clean_regeneration_state(
             self.cache_manager,
             self.clean_regen_state_cache_key,
             log_label="Clean Regeneration (Moonshot)",
         )
 
-    def _write_clean_regeneration_state(self, state: Dict[str, bool]) -> None:
+    def _write_clean_regeneration_state(self, state: Dict[str, Any]) -> None:
         write_clean_regeneration_state(
             self.cache_manager,
             self.clean_regen_state_cache_key,
@@ -1560,14 +1690,24 @@ class MoonshotDriver(BaseDriver):
         self,
         *,
         effective_deepthink: bool,
+        deepthink_effort: str = "",
+        context_length: str = "",
         enable_search: bool,
         send_as_text_file: bool,
-    ) -> Dict[str, bool]:
-        return {
+        ui_model: str = "",
+    ) -> Dict[str, Any]:
+        state: Dict[str, Any] = {
             "deepthink_enabled": bool(effective_deepthink),
             "search_enabled": bool(enable_search),
             "send_as_text_file": bool(send_as_text_file),
         }
+        if deepthink_effort:
+            state["deepthink_effort"] = str(deepthink_effort)
+        if context_length:
+            state["context_length"] = str(context_length)
+        if ui_model:
+            state["ui_model"] = str(ui_model)
+        return state
 
     def _parse_conversation_info_from_url(self, url: str) -> Optional[Dict[str, str]]:
         normalized_url = str(url or "").strip()
@@ -1760,7 +1900,12 @@ class MoonshotDriver(BaseDriver):
                 return False
 
         try:
-            await self.set_deepthink_state(bool(multi_slot_state.get("deepthink_enabled")))
+            await self.set_deepthink_state(
+                bool(multi_slot_state.get("deepthink_enabled")),
+                effort=str(multi_slot_state.get("deepthink_effort") or ""),
+                context_length=str(multi_slot_state.get("context_length") or ""),
+                model_label=str(multi_slot_state.get("ui_model") or ""),
+            )
             await self.set_search_state(bool(multi_slot_state.get("search_enabled")))
             await asyncio.sleep(0.2)
         except Exception:
@@ -1910,7 +2055,7 @@ class MoonshotDriver(BaseDriver):
         resolved_model = (model or "").strip() or "moonshot-auto"
         self.current_model = resolved_model
 
-        macros_overrides: Dict[str, bool] = {}
+        macros_overrides: Dict[str, Any] = {}
         message_for_formatting = message
         if isinstance(message, list):
             message_for_formatting, macros_overrides = self._strip_moonshot_macros_from_messages(message)
@@ -1923,9 +2068,13 @@ class MoonshotDriver(BaseDriver):
         effective_settings = self._resolve_moonshot_request_settings(resolved_model, overrides=macros_overrides)
         effective_deepthink = effective_settings["deepthink_enabled"]
         effective_send_deepthink = effective_settings["send_deepthink"]
+        deepthink_effort = str(effective_settings.get("deepthink_effort") or "").strip()
+        context_length = str(effective_settings.get("context_length") or "").strip()
         enable_search = effective_settings["search_enabled"]
         send_as_text_file = effective_settings["send_as_text_file"]
         self.current_ui_model = str(effective_settings.get("ui_model") or "").strip()
+        self.current_deepthink_effort = deepthink_effort
+        self.current_context_length = context_length
         self.current_send_deepthink = effective_send_deepthink
 
         async def handle_route(route):
@@ -2333,7 +2482,10 @@ class MoonshotDriver(BaseDriver):
                 extra_prompt_texts=moonshot_extra_prompt_texts or None,
                 metadata={
                     "model": resolved_model,
+                    "ui_model": self.current_ui_model,
                     "deepthink_enabled": bool(effective_deepthink),
+                    "deepthink_effort": deepthink_effort,
+                    "context_length": context_length,
                     "send_deepthink": bool(effective_send_deepthink),
                     "search_enabled": bool(enable_search),
                     "send_as_text_file": bool(send_as_text_file),
@@ -2365,13 +2517,19 @@ class MoonshotDriver(BaseDriver):
             if clean_regeneration:
                 clean_regen_state = {
                     "deepthink_enabled": bool(effective_deepthink),
+                    "deepthink_effort": deepthink_effort,
+                    "context_length": context_length,
                     "search_enabled": bool(enable_search),
                     "send_as_text_file": bool(send_as_text_file),
+                    "ui_model": self.current_ui_model,
                 }
                 multi_slot_state = self._build_multi_slot_cache_state(
                     effective_deepthink=bool(effective_deepthink),
+                    deepthink_effort=deepthink_effort,
+                    context_length=context_length,
                     enable_search=bool(enable_search),
                     send_as_text_file=bool(send_as_text_file),
+                    ui_model=self.current_ui_model,
                 )
 
                 last_message = self.cache_manager.read_cache(self.clean_regen_message_cache_key)
@@ -2426,7 +2584,12 @@ class MoonshotDriver(BaseDriver):
                 await self._click_new_chat()
                 await asyncio.sleep(0.4)
 
-                await self.set_deepthink_state(effective_deepthink)
+                await self.set_deepthink_state(
+                    effective_deepthink,
+                    effort=deepthink_effort,
+                    context_length=context_length,
+                    model_label=self.current_ui_model,
+                )
                 await self.set_search_state(enable_search)
                 await asyncio.sleep(0.2)
 
@@ -2807,6 +2970,24 @@ class MoonshotDriver(BaseDriver):
 
         return ""
 
+    async def _read_current_effort_name(self) -> str:
+        selectors = [
+            "div.current-model span.current-effort",
+            "div.current-model .current-effort",
+            ".current-effort",
+        ]
+        for selector in selectors:
+            try:
+                locator = self.page.locator(selector)
+                if await locator.count() == 0:
+                    continue
+                text = (await locator.first.inner_text(timeout=1500) or "").strip()
+                if text:
+                    return text
+            except Exception:
+                continue
+        return ""
+
     async def _read_kimi_model_item_name(self, item) -> str:
         selectors = [
             "div.model-item-content div.header div.model-name > span:first-child",
@@ -2840,32 +3021,65 @@ class MoonshotDriver(BaseDriver):
                 return text
         return raw
 
-    async def _select_kimi_model(self, target_model: str) -> bool:
+    async def _open_model_picker(self) -> bool:
         await self._dismiss_kimi_sidebar_overlay()
         trigger = await self._find_first_visible(["div.current-model"], timeout_ms=8000)
         if trigger is None:
             Logger.warning("Moonshot: model selector trigger not found.")
             return False
 
+        menu_selectors = [
+            "[role='menu']",
+            "div.model-list-options",
+            "div.kimi-menu-positioner",
+            "div.models-container",
+        ]
         try:
-            if await self._find_first_visible(["div.models-container"], timeout_ms=0) is None:
+            if await self._find_first_visible(menu_selectors, timeout_ms=0) is None:
                 clicked = await self._click_with_fallbacks(trigger, timeout_ms=3000)
                 if not clicked:
                     Logger.warning("Moonshot: model selector trigger could not be clicked.")
                     return False
-            await self.page.wait_for_selector("div.models-container", timeout=5000, state="visible")
-            await self.page.wait_for_selector("div.models-container div.model-item", timeout=5000, state="attached")
+            for sel in menu_selectors:
+                try:
+                    await self.page.wait_for_selector(sel, timeout=3000, state="visible")
+                    return True
+                except Exception:
+                    continue
+            if await self._find_first_visible(menu_selectors, timeout_ms=1000) is not None:
+                return True
         except Exception as e:
             Logger.warning(f"Moonshot: model picker did not open: {e}")
             return False
+        return False
+
+    async def _select_kimi_model(self, target_model: str) -> bool:
+        if not await self._open_model_picker():
+            return False
 
         target_norm = self._normalize_text(target_model)
-        items = self.page.locator("div.models-container div.model-item")
-        count = await items.count()
-        if count == 0:
+        item_selectors = [
+            "[role='menu'] [role='menuitemradio']",
+            "div.model-list-options div.model-item",
+            "div.models-container div.model-item",
+            "div.model-item",
+        ]
+
+        items = None
+        for sel in item_selectors:
+            loc = self.page.locator(sel)
+            try:
+                if await loc.count() > 0:
+                    items = loc
+                    break
+            except Exception:
+                continue
+
+        if items is None:
             Logger.warning("Moonshot: no model items found in picker.")
             return False
 
+        count = await items.count()
         seen_names: list[str] = []
         for idx in range(min(count, 30)):
             item = items.nth(idx)
@@ -2898,6 +3112,45 @@ class MoonshotDriver(BaseDriver):
             )
             return False
 
+        # If not found at top level, check "More models" (e.g. K3)
+        more_models_selectors = [
+            "[role='menu'] [role='menuitem']:has-text('More models')",
+            "div.more-models",
+            "div.model-item:has-text('More models')",
+        ]
+        more_btn = await self._find_first_visible(more_models_selectors, timeout_ms=500)
+        if more_btn is not None:
+            try:
+                await more_btn.hover(timeout=1500)
+                await asyncio.sleep(0.3)
+            except Exception:
+                await self._click_with_fallbacks(more_btn, timeout_ms=1500)
+                await asyncio.sleep(0.3)
+
+            submenu_items = self.page.locator("[role='menu'] [role='menuitemradio'], div.kimi-menu-positioner div.model-item")
+            sub_count = await submenu_items.count()
+            for s_idx in range(sub_count):
+                s_item = submenu_items.nth(s_idx)
+                s_name = self._normalize_text(await self._read_kimi_model_item_name(s_item))
+                if s_name and s_name not in seen_names:
+                    seen_names.append(s_name)
+                if self._model_name_matches(s_name, target_norm):
+                    try:
+                        clicked = await self._click_with_fallbacks(s_item, timeout_ms=3000)
+                        if not clicked:
+                            raise RuntimeError("submenu model item not clickable")
+                    except Exception as e:
+                        Logger.warning(f"Moonshot: failed to click model '{target_model}' in submenu: {e}")
+                        return False
+
+                    deadline = time.time() + 5.0
+                    while time.time() < deadline:
+                        current = await self._read_current_model_name()
+                        if self._model_name_matches(self._normalize_text(current), target_norm):
+                            return True
+                        await asyncio.sleep(0.1)
+                    return True
+
         Logger.warning(f"Moonshot: target model '{target_model}' not found in picker.")
         if seen_names:
             Logger.warning(
@@ -2907,6 +3160,117 @@ class MoonshotDriver(BaseDriver):
             await self.page.keyboard.press("Escape")
         except Exception:
             pass
+        return False
+
+    async def _select_kimi_thinking_effort(self, effort: str) -> bool:
+        target_effort = self._normalize_kimi_effort(effort)
+        current = await self._read_current_effort_name()
+        if self._normalize_text(current) == self._normalize_text(target_effort):
+            return True
+
+        if not await self._open_model_picker():
+            return False
+
+        effort_item_selectors = [
+            "[role='menu'] [role='menuitem']:has-text('Thinking effort')",
+            "div.model-item:has-text('Thinking effort')",
+            ".kimi-menu-item:has-text('Thinking effort')",
+        ]
+        effort_item = await self._find_first_visible(effort_item_selectors, timeout_ms=2000)
+        if effort_item is None:
+            Logger.debug("Moonshot: 'Thinking effort' menuitem not present (unsupported by active model).")
+            try:
+                await self.page.keyboard.press("Escape")
+            except Exception:
+                pass
+            return False
+
+        try:
+            await effort_item.hover(timeout=1500)
+            await asyncio.sleep(0.3)
+        except Exception:
+            await self._click_with_fallbacks(effort_item, timeout_ms=1500)
+            await asyncio.sleep(0.3)
+
+        target_norm = self._normalize_text(target_effort)
+        sub_items = self.page.locator("[role='menu'] [role='menuitemradio'], div.kimi-menu-positioner [role='menuitemradio']")
+        sub_count = await sub_items.count()
+        clicked_effort = False
+        for i in range(sub_count):
+            item = sub_items.nth(i)
+            text = self._normalize_text(await self._read_locator_text(item, timeout_ms=1000))
+            if target_norm in text:
+                clicked = await self._click_with_fallbacks(item, timeout_ms=2000)
+                if clicked:
+                    clicked_effort = True
+                    break
+
+        try:
+            await self.page.keyboard.press("Escape")
+        except Exception:
+            pass
+
+        if clicked_effort:
+            Logger.info(f"Moonshot: set Thinking Effort to '{target_effort}'.")
+            return True
+
+        Logger.warning(f"Moonshot: failed to select Thinking Effort '{target_effort}'.")
+        return False
+
+    async def _select_kimi_context_length(self, length: str) -> bool:
+        target_length = self._normalize_kimi_context_length(length)
+        if not await self._open_model_picker():
+            return False
+
+        context_item_selectors = [
+            "[role='menu'] [role='menuitem']:has-text('Context length')",
+            "div.model-item:has-text('Context length')",
+            ".kimi-menu-item:has-text('Context length')",
+        ]
+        context_item = await self._find_first_visible(context_item_selectors, timeout_ms=2000)
+        if context_item is None:
+            Logger.debug("Moonshot: 'Context length' menuitem not present (unsupported by active model).")
+            try:
+                await self.page.keyboard.press("Escape")
+            except Exception:
+                pass
+            return False
+
+        try:
+            await context_item.hover(timeout=1500)
+            await asyncio.sleep(0.3)
+        except Exception:
+            await self._click_with_fallbacks(context_item, timeout_ms=1500)
+            await asyncio.sleep(0.3)
+
+        is_extra_long = (target_length == self.CONTEXT_EXTRA_LONG)
+        sub_items = self.page.locator("[role='menu'] [role='menuitemradio'], div.kimi-menu-positioner [role='menuitemradio']")
+        sub_count = await sub_items.count()
+        clicked_context = False
+        for i in range(sub_count):
+            item = sub_items.nth(i)
+            text = self._normalize_text(await self._read_locator_text(item, timeout_ms=1000))
+            if is_extra_long and ("extra" in text or "1m" in text):
+                clicked = await self._click_with_fallbacks(item, timeout_ms=2000)
+                if clicked:
+                    clicked_context = True
+                    break
+            elif (not is_extra_long) and ("standard" in text and "extra" not in text):
+                clicked = await self._click_with_fallbacks(item, timeout_ms=2000)
+                if clicked:
+                    clicked_context = True
+                    break
+
+        try:
+            await self.page.keyboard.press("Escape")
+        except Exception:
+            pass
+
+        if clicked_context:
+            Logger.info(f"Moonshot: set Context Length to '{target_length}'.")
+            return True
+
+        Logger.warning(f"Moonshot: failed to select Context Length '{target_length}'.")
         return False
 
     @classmethod
@@ -2940,12 +3304,15 @@ class MoonshotDriver(BaseDriver):
             return ""
         return value
 
-    async def set_deepthink_state(self, state: bool):
-        # Priority: API-requested model (kimi-k3-*) > configured dropdown >
-        # legacy Auto mode (Thinking toggle flips Instant/Thinking).
-        configured_model = self.current_ui_model or self._get_configured_model_friendly()
+    async def set_deepthink_state(
+        self,
+        state: bool,
+        effort: str = "",
+        context_length: str = "",
+        model_label: str = "",
+    ):
+        configured_model = model_label or self.current_ui_model or self._get_configured_model_friendly()
         if configured_model:
-            # Explicit model selection wins over the Thinking toggle.
             current = await self._read_current_model_name()
             Logger.debug(
                 f"Moonshot: model selection requested '{configured_model}' "
@@ -2957,27 +3324,48 @@ class MoonshotDriver(BaseDriver):
                     Logger.warning(
                         f"Moonshot: failed to select configured model '{configured_model}'."
                     )
+
+            active_model = await self._read_current_model_name() or configured_model
+            if self._model_supports_thinking_effort(active_model):
+                target_effort = effort or self._get_configured_deepthink_effort()
+                if target_effort:
+                    await self._select_kimi_thinking_effort(target_effort)
+
+            if self._model_supports_context_length(active_model):
+                target_context = context_length or self._get_configured_context_length()
+                if target_context:
+                    await self._select_kimi_context_length(target_context)
             return
 
         current = await self._read_current_model_name()
         current_norm = self._normalize_text(current)
         instant_norm = self._normalize_text(self.MODEL_INSTANT)
-        thinking_norm = self._normalize_text(self.MODEL_THINKING)
 
-        target_model = self.MODEL_THINKING if state else self.MODEL_INSTANT
+        target_model = self.MODEL_K31_PRO if state else self.MODEL_INSTANT
         target_norm = self._normalize_text(target_model)
 
-        if current_norm == target_norm:
-            return
+        if current_norm != target_norm:
+            switched = await self._select_kimi_model(target_model)
+            if not switched and state:
+                for fallback in (self.MODEL_K28_PREVIEW, self.MODEL_THINKING):
+                    switched = await self._select_kimi_model(fallback)
+                    if switched:
+                        break
+            if not switched:
+                Logger.warning(
+                    f"Moonshot: failed to set Thinking mode target model '{target_model}'."
+                )
 
-        if (current_norm not in {instant_norm, thinking_norm}) and (not state):
-            target_model = self.MODEL_INSTANT
-
-        switched = await self._select_kimi_model(target_model)
-        if not switched:
-            Logger.warning(
-                f"Moonshot: failed to set Thinking mode target model '{target_model}'."
-            )
+        if state:
+            active_model = await self._read_current_model_name() or target_model
+            if self._model_supports_thinking_effort(active_model):
+                target_effort = effort or self._get_configured_deepthink_effort()
+                if target_effort:
+                    await self._select_kimi_thinking_effort(target_effort)
+            if self._model_supports_context_length(active_model):
+                target_context = context_length or self._get_configured_context_length()
+                if target_context:
+                    await self._select_kimi_context_length(target_context)
 
     async def _find_offline_mode_switch(self):
         """Locate kimi.ai's Offline Mode switch (label "Internet off").
@@ -3241,10 +3629,75 @@ class MoonshotDriver(BaseDriver):
             Logger.warning(f"Moonshot: failed to click search state option: {e}")
             return False
 
+    async def _set_search_state_via_tools_menu(self, state: bool) -> bool:
+        if not self.page:
+            return False
+        plus_btn_selectors = [
+            "button[aria-label*='Upload files']",
+            "button:has-text('Upload files')",
+            "div.chat-input-container button[aria-label*='tools']",
+            "div.chat-input button:has(svg)",
+            "button.tools-btn",
+        ]
+        btn = await self._find_first_visible(plus_btn_selectors, timeout_ms=2000)
+        if btn is None:
+            return False
+
+        try:
+            clicked = await self._click_with_fallbacks(btn, timeout_ms=2000)
+            if not clicked:
+                return False
+            await asyncio.sleep(0.3)
+        except Exception:
+            return False
+
+        search_menu_item = await self._find_first_visible(
+            [
+                "[role='menu'] [role='menuitem']:has-text('Web Search')",
+                "div.kimi-menu-positioner [role='menuitem']:has-text('Web Search')",
+            ],
+            timeout_ms=2000,
+        )
+        if search_menu_item is None:
+            try:
+                await self.page.keyboard.press("Escape")
+            except Exception:
+                pass
+            return False
+
+        try:
+            await search_menu_item.click(timeout=2000)
+            await asyncio.sleep(0.3)
+        except Exception:
+            try:
+                await self.page.keyboard.press("Escape")
+            except Exception:
+                pass
+            return False
+
+        target_text = "Auto search" if state else "Turn off search"
+        sub_items = self.page.locator("[role='menu'] [role='menuitemradio'], div.kimi-menu-positioner [role='menuitemradio']")
+        sub_count = await sub_items.count()
+        clicked_opt = False
+        for i in range(sub_count):
+            item = sub_items.nth(i)
+            text = self._normalize_text(await self._read_locator_text(item, timeout_ms=1000))
+            if self._normalize_text(target_text) in text:
+                clicked_opt = await self._click_with_fallbacks(item, timeout_ms=2000)
+                break
+
+        try:
+            await self.page.keyboard.press("Escape")
+        except Exception:
+            pass
+        return clicked_opt
+
     @classmethod
     def _model_has_search_control(cls, ui_model_label: str) -> bool:
-        """K3-family models don't render the search control in Kimi's composer."""
+        """K3-family legacy models don't render the search control in Kimi's composer."""
         norm = cls._normalize_text(ui_model_label)
+        if "k3.1" in norm or "k3-1" in norm:
+            return True
         return not ("k3" in norm or "swarm" in norm)
 
     async def set_search_state(self, state: bool):
@@ -3292,6 +3745,8 @@ class MoonshotDriver(BaseDriver):
                     pass
 
             ok = await self._set_search_state_via_toolkit(state)
+            if not ok:
+                ok = await self._set_search_state_via_tools_menu(state)
             if ok:
                 await asyncio.sleep(0.4)
                 if await self._is_search_enabled():
@@ -3300,6 +3755,8 @@ class MoonshotDriver(BaseDriver):
             return
 
         ok = await self._set_search_state_via_toolkit(state)
+        if not ok:
+            ok = await self._set_search_state_via_tools_menu(state)
         if not ok:
             self._notice_search_ui_unavailable("disable")
             return

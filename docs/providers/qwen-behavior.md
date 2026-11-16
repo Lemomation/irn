@@ -14,12 +14,12 @@ Controls how IntenseRP captures QwenLM's streaming response.
 
 :material-arrow-right: **Settings** -> **Provider Behavior** -> **QwenLM** -> **Request Capture Mode**
 
-**Replay** is the default. IntenseRP intercepts the Qwen request, replays it internally, streams that replay to the API client, and then gives the captured response back to the page. It's the older, known-good path.
+**CDP Teeing** is the default. IntenseRP leaves Qwen's real browser request alone, tees the real response through Chrome DevTools Protocol, and feeds those bytes through the same Qwen stream parser. This lets Qwen's page JavaScript receive and process its own response normally while IntenseRP observes the stream.
 
-**CDP Teeing** is the newer alternative. IntenseRP leaves Qwen's real browser request alone, tees the real response through Chrome DevTools Protocol, and feeds those bytes through the same Qwen stream parser. This lets Qwen's page JavaScript receive and process its own response normally while IntenseRP observes the stream.
+**Replay** is the alternative fallback. IntenseRP intercepts the Qwen request, replays it internally, streams that replay to the API client, and then gives the captured response back to the page.
 
-!!! note "Default stays Replay"
-    CDP Teeing is off by default for QwenLM. It's available if you want the browser-native request path, but Replay remains the safer default while this newer path gets more real-world mileage.
+!!! tip "CDP Teeing is Default"
+    CDP Teeing is the recommended and default capture mode for QwenLM, providing seamless browser-native request handling. You can switch back to Replay if needed.
 
 ---
 
@@ -269,7 +269,7 @@ All macros are stripped from the message before sending it to QwenLM.
 
 | Setting | What It Does | Default |
 |---------|--------------|---------|
-| **Request Capture Mode** | Captures responses with Replay or CDP Teeing | Replay |
+| **Request Capture Mode** | Captures responses with CDP Teeing or Replay | CDP Teeing |
 | **Model** | Selects QwenLM's real model picker (UI) | Qwen3.5-Plus |
 | **Enable Thinking** | Switches QwenLM into Thinking (vs Fast) | Off |
 | **Send Thinking** | Includes thinking summaries in response | Off |

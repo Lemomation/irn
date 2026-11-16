@@ -84,10 +84,31 @@ MOONSHOT_REGION_CN = "cn"
 MOONSHOT_MODEL_AUTO_LABEL = "Auto (Thinking toggle)"
 MOONSHOT_MODEL_OPTIONS = [
     MOONSHOT_MODEL_AUTO_LABEL,
+    "K3.1 Pro",
+    "K2.8 Preview",
     "Instant",
-    "K2.8",
     "Kimi K3",
+]
+MOONSHOT_MODEL_DEPRECATED_OPTIONS = [
+    "K2.8",
     "Kimi K3 Swarm",
+    "K2.6 Thinking",
+]
+
+MOONSHOT_EFFORT_STANDARD = "Standard"
+MOONSHOT_EFFORT_HIGH = "High"
+MOONSHOT_EFFORT_MAX = "Max"
+MOONSHOT_EFFORT_OPTIONS = [
+    MOONSHOT_EFFORT_STANDARD,
+    MOONSHOT_EFFORT_HIGH,
+    MOONSHOT_EFFORT_MAX,
+]
+
+MOONSHOT_CONTEXT_STANDARD = "Standard"
+MOONSHOT_CONTEXT_EXTRA_LONG = "Extra Long (1M tokens)"
+MOONSHOT_CONTEXT_OPTIONS = [
+    MOONSHOT_CONTEXT_STANDARD,
+    MOONSHOT_CONTEXT_EXTRA_LONG,
 ]
 
 MOONSHOT_REGION_OPTIONS = [
@@ -96,7 +117,7 @@ MOONSHOT_REGION_OPTIONS = [
         "value": MOONSHOT_REGION_OVERSEAS,
     },
     {
-        "label": "China (kimi.com)",
+        "label": "China (kimi.com) [unmaintained]",
         "value": MOONSHOT_REGION_CN,
     },
 ]
@@ -827,8 +848,9 @@ SCHEMA = [
                 options=MOONSHOT_REGION_OPTIONS,
                 tooltip=(
                     "Pick which Kimi domain to use: kimi.ai for international accounts "
-                    "or kimi.com for Chinese ones. Sessions already signed in on either "
-                    "domain keep working."
+                    "or kimi.com for Chinese ones. Note: kimi.com is unmaintained because "
+                    "maintaining an account requires a mainland Chinese phone number (+86). "
+                    "Sessions already signed in on either domain keep working."
                 ),
             ),
             SettingField(
@@ -837,11 +859,47 @@ SCHEMA = [
                 type=SettingType.DROPDOWN,
                 default=MOONSHOT_MODEL_AUTO_LABEL,
                 options=MOONSHOT_MODEL_OPTIONS,
+                deprecated_options=MOONSHOT_MODEL_DEPRECATED_OPTIONS,
+                deprecated_tooltip="Model has been retired or superseded on Kimi",
                 tooltip=(
                     "Pick a specific model in Kimi's picker. Auto keeps the classic "
                     "behavior where the Enable Thinking toggle switches between "
                     "Instant and Thinking. An explicit model always wins over the toggle."
                 ),
+                docs_path=DOCS_MOONSHOT,
+                docs_anchor="modes-model-ids",
+            ),
+            SettingField(
+                key="show_deprecated_models",
+                label="Show Retired Models",
+                type=SettingType.BOOLEAN,
+                default=False,
+                tooltip="Include older, retired Kimi models in the model selector dropdown.",
+                docs_path=DOCS_MOONSHOT,
+                docs_anchor="modes-model-ids",
+            ),
+            SettingField(
+                key="deepthink_effort",
+                label="Thinking Level",
+                type=SettingType.DROPDOWN,
+                default=MOONSHOT_EFFORT_HIGH,
+                options=MOONSHOT_EFFORT_OPTIONS,
+                tooltip="Select the Thinking Effort level for reasoning-capable models (Standard, High, Max). Kimi defaults to High.",
+                docs_path=DOCS_MOONSHOT,
+                docs_anchor="thinking-effort",
+            ),
+            SettingField(
+                key="context_length",
+                label="Context Length",
+                type=SettingType.DROPDOWN,
+                default=MOONSHOT_CONTEXT_STANDARD,
+                options=MOONSHOT_CONTEXT_OPTIONS,
+                tooltip=(
+                    "Select Kimi's context length. Standard is default; "
+                    "Extra Long expands up to 1M tokens (consumes more credits and requires membership)."
+                ),
+                docs_path=DOCS_MOONSHOT,
+                docs_anchor="context-length",
             ),
             SettingField(
                 key="request_capture_mode",
@@ -990,11 +1048,11 @@ SCHEMA = [
                 key="request_capture_mode",
                 label="Request Capture Mode",
                 type=SettingType.SWITCHER,
-                default=REQUEST_CAPTURE_REPLAY,
+                default=REQUEST_CAPTURE_CDP_TEEING,
                 options=REQUEST_CAPTURE_MODE_OPTIONS,
                 tooltip=(
                     "Choose how IntenseRP should capture provider responses. "
-                    "Replay is the default; CDP Teeing is the newer alternative."
+                    "CDP Teeing is the default; Replay is the alternative."
                 ),
             ),
             SettingField(
@@ -3571,7 +3629,7 @@ PROVIDER_BEHAVIOR_GROUPS = {
         {"title": "Quirks", "icon": "bug.svg", "fields": ["ui_click_timeout", "post_action_delay", "message_send_timeout", "completion_request_timeout", "first_chunk_timeout", "refresh_after_generation"]},
     ],
     "moonshot_behavior": [
-        {"title": "Core", "icon": "settings.svg", "fields": ["site_region", "model", "request_capture_mode", "enable_deepthink", "send_deepthink", "search_and_think_note", "enable_search"]},
+        {"title": "Core", "icon": "settings.svg", "fields": ["site_region", "model", "show_deprecated_models", "deepthink_effort", "context_length", "request_capture_mode", "enable_deepthink", "send_deepthink", "search_and_think_note", "enable_search"]},
         {"title": "Uploads", "icon": "upload.svg", "fields": ["send_as_text_file", "file_upload_timeout", "text_file_filler"]},
         {"title": "Retry and Reuse", "icon": "rotate-ccw.svg", "fields": ["clean_regeneration", "auto_delete_chats", "auto_delete_chats_warning", "multi_slot_cache"]},
         {"title": "Blocked Responses", "icon": "shield-ban.svg", "fields": ["anti_censorship"]},

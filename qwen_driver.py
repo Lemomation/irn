@@ -462,14 +462,14 @@ class QwenLMDriver(BaseDriver):
         try:
             mode = str(
                 self.config_manager.get_setting("qwen_behavior", "request_capture_mode")
-                or self.REQUEST_CAPTURE_MODE_REPLAY
+                or self.REQUEST_CAPTURE_MODE_CDP_TEEING
             ).strip().lower()
         except Exception:
-            mode = self.REQUEST_CAPTURE_MODE_REPLAY
+            mode = self.REQUEST_CAPTURE_MODE_CDP_TEEING
 
-        if mode == self.REQUEST_CAPTURE_MODE_CDP_TEEING:
-            return self.REQUEST_CAPTURE_MODE_CDP_TEEING
-        return self.REQUEST_CAPTURE_MODE_REPLAY
+        if mode == self.REQUEST_CAPTURE_MODE_REPLAY:
+            return self.REQUEST_CAPTURE_MODE_REPLAY
+        return self.REQUEST_CAPTURE_MODE_CDP_TEEING
 
     @classmethod
     def _is_completion_request_url(cls, url: Any) -> bool:

@@ -23,9 +23,12 @@ This page covers the toggles and options that control how IntenseRP interacts wi
 Chooses which Kimi domain new sessions start on:
 
 | Option | Domain | For |
-|--------|--------|-----|
-| **International (kimi.ai)** | `kimi.ai` | The default. Use this unless your account lives on the Chinese site. |
-| **China (kimi.com)** | `kimi.com` | Accounts registered on the Chinese Kimi site. |
+|---|---|---|
+| **International (kimi.ai)** | `kimi.ai` | The default and actively maintained site. Use this for international accounts (supports Google sign-in and international phone numbers). |
+| **China (kimi.com) [unmaintained]** | `kimi.com` | Unmaintained legacy option for accounts on the Chinese Kimi site. |
+
+!!! warning "China (kimi.com) is Unmaintained"
+    The Chinese site (`kimi.com`) is tagged as **[unmaintained]** because creating and maintaining an account on `kimi.com` requires a mainland Chinese phone number (+86), which the project maintainer does not have. The international site `kimi.ai` is actively maintained and recommended for all users.
 
 The switch only decides the *starting* domain. Once a session is live, IntenseRP always talks to whichever host the page actually uses, so a saved session from the other region keeps working even if the switch is set differently.
 
@@ -73,27 +76,50 @@ Kimi exposes reasoning through model mode selection in the web UI.
 
 Selects a specific entry in Kimi's model picker:
 
-| Option | Picker entry |
-|--------|--------------|
-| **Auto (Thinking toggle)** | No fixed selection - the Enable Thinking toggle decides |
-| **Instant** | Kimi's fast model (currently labeled `Instant`) |
-| **K2.8** | Kimi's K2.8 entry (separate from Instant; tier-gated preview on some accounts) |
-| **Kimi K3** | The K3 flagship |
-| **Kimi K3 Swarm** | The K3 Swarm variant |
+| Option | Picker entry | Description |
+|--------|--------------|-------------|
+| **Auto (Thinking toggle)** | No fixed selection | The Enable Thinking toggle switches between Instant and K3.1 Pro |
+| **K3.1 Pro** | `K3.1 Pro` | All-around flagship with upgraded coding and agentic capabilities |
+| **K2.8 Preview** | `K2.8 Preview` | Well-rounded and efficient for everyday tasks |
+| **Instant** | `Instant` | Fast chat with quick replies (thinking bypassed) |
+| **Kimi K3** | `K3` | Legacy flagship available under More models |
 
-An explicit model always wins over the Enable Thinking toggle: when one is selected, IntenseRP makes sure that exact picker entry is active and leaves the Thinking toggle alone. Matching is label-tolerant, so older rollouts that still show `K2.6 Instant` / `K2.6 Thinking` keep working. `Instant` and `K2.8` are always matched to their own picker entries - K2.8 is never used as a stand-in for Instant.
+An explicit model always wins over the Enable Thinking toggle: when one is selected, IntenseRP makes sure that exact picker entry is active. When older retired models (`K2.8`, `Kimi K3 Swarm`, `K2.6 Thinking`) are selected or enabled via **Show Retired Models**, IntenseRP translates them to their modern active counterparts or matches them in the picker.
+
+### Thinking Level (Effort)
+
+:material-arrow-right: **Settings** -> **Provider Behavior** -> **Moonshot** -> **Thinking Level**
+
+Controls the reasoning effort for reasoning-capable models (`K3.1 Pro`, `K2.8 Preview`, `K3`):
+
+| Level | Description |
+|-------|-------------|
+| **Standard** | Balanced reasoning depth for everyday tasks |
+| **High** | Default effort level on Kimi with deep analytical chain-of-thought |
+| **Max** | Maximum reasoning depth on K3.1 Pro for the most complex problems |
+
+### Context Length
+
+:material-arrow-right: **Settings** -> **Provider Behavior** -> **Moonshot** -> **Context Length**
+
+Selects Kimi's context length window:
+
+| Setting | Context Size | Notes |
+|---------|--------------|-------|
+| **Standard** | Default context window | Standard token limit |
+| **Extra Long (1M tokens)** | Up to 1,000,000 tokens | Expands context window to 1M tokens (requires member subscription on Kimi) |
 
 #### Split API model IDs
 
-With Universal Model Names enabled (Providers in Parallel), Moonshot exposes per-model API IDs like GLM does:
+With Universal Model Names enabled (Providers in Parallel), Moonshot exposes per-model API IDs:
 
-| API model ID | Picker target | Reasoning |
-|--------------|---------------|-----------|
-| `instant-auto` / `instant-chat` / `instant-reasoner` | Instant | `-reasoner` switches to the Thinking variant |
-| `k2-8-auto` / `k2-8-chat` / `k2-8-reasoner` | K2.8 | `-reasoner` switches to the Thinking variant, K2.8 entry |
-| `kimi-k3-auto` / `kimi-k3-chat` / `kimi-k3-reasoner` | Kimi K3 | `-reasoner` forwards reasoning, `-chat` strips it |
-| `kimi-k3-swarm-auto` / `kimi-k3-swarm-chat` / `kimi-k3-swarm-reasoner` | Kimi K3 Swarm | same as K3 |
-| `moonshot-auto` / `moonshot-chat` / `moonshot-reasoner` | legacy behavior modes | unchanged |
+| API model ID | Picker target | Reasoning / Options |
+|--------------|---------------|---------------------|
+| `k3.1-pro-auto` / `k3.1-pro-reasoner` / `k3.1-pro-chat` | K3.1 Pro | Flagship model; supports `-max`, `-high`, `-standard`, `-1m` suffixes |
+| `k2.8-preview-auto` / `k2.8-preview-reasoner` / `k2.8-preview-chat` | K2.8 Preview | Efficient model; supports `-high`, `-standard`, `-1m` suffixes |
+| `instant-auto` / `instant-chat` / `instant-reasoner` | Instant | Fast chat; `-reasoner` switches to reasoning mode |
+| `kimi-k3-auto` / `kimi-k3-reasoner` / `kimi-k3-chat` | Kimi K3 | Legacy flagship under More models |
+| `moonshot-auto` / `moonshot-chat` / `moonshot-reasoner` | Legacy behavior modes | Standard fallback modes |
 
 The suffix always decides how reasoning content is handled; the name decides which picker entry is active.
 
@@ -223,6 +249,11 @@ All macros are stripped before sending.
 |------|--------|
 | `[[think]]`, `[[r1]]` | Force Thinking on |
 | `[[nothink]]`, `[[r0]]` | Force Thinking off |
+| `[[effort:standard]]`, `[[standard]]` | Set Thinking Effort to Standard |
+| `[[effort:high]]`, `[[high]]` | Set Thinking Effort to High |
+| `[[effort:max]]`, `[[max]]`, `[[xhigh]]` | Set Thinking Effort to Max |
+| `[[context:standard]]` | Set Context Length to Standard |
+| `[[context:1m]]`, `[[1m]]`, `[[xl]]` | Set Context Length to Extra Long (1M tokens) |
 | `[[search]]` | Force Search on |
 | `[[nosearch]]`, `[[no_search]]` | Force Search off |
 | `[[file]]` | Force Send As Text File on |
@@ -235,7 +266,10 @@ All macros are stripped before sending.
 | Setting | What It Does | Default |
 |---------|--------------|---------|
 | **Kimi Site Region** | Picks the starting domain (kimi.ai or kimi.com) | International (kimi.ai) |
-| **Model** | Picks a specific model (Instant, K2.8, Kimi K3, Kimi K3 Swarm) | Auto (Thinking toggle) |
+| **Model** | Picks a specific model (Auto, K3.1 Pro, K2.8 Preview, Instant, Kimi K3) | Auto (Thinking toggle) |
+| **Show Retired Models** | Displays older/retired models (K2.8, Kimi K3 Swarm, K2.6 Thinking) | Off |
+| **Thinking Level** | Sets reasoning effort (Standard, High, Max) | High |
+| **Context Length** | Selects context length (Standard, Extra Long 1M tokens) | Standard |
 | **Request Capture Mode** | Captures responses with Replay or CDP Teeing | Replay |
 | **Enable Thinking** | Switches Kimi mode between Instant and Thinking | Off |
 | **Send Thinking** | Includes reasoning in response | Off |
