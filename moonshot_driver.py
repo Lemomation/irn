@@ -335,6 +335,50 @@ class MoonshotDriver(BaseDriver):
             await self._dismiss_common_notice_dialog()
         except Exception as e:
             Logger.debug(f"Moonshot: common notice dialog check failed: {e}")
+        try:
+            await self._check_and_dismiss_capacity_modal(wait_ms=300)
+        except Exception as e:
+            Logger.debug(f"Moonshot: capacity modal check failed: {e}")
+
+    async def _check_and_dismiss_capacity_modal(self, wait_ms: int = 500) -> bool:
+        if not self.page:
+            return False
+        try:
+            dialog_selectors = [
+                "div[role='dialog']:has-text('Too many people are chatting with Kimi')",
+                "div.kimi-modal:has-text('Too many people are chatting with Kimi')",
+                "div:has-text('Too many people are chatting with Kimi')",
+            ]
+            dialog = await self._find_first_visible(dialog_selectors, timeout_ms=wait_ms)
+            detected = dialog is not None
+            if not detected:
+                try:
+                    page_text = await self.page.evaluate(
+                        "() => (document.body ? document.body.innerText.toLowerCase() : '')"
+                    )
+                    if "too many people are chatting with kimi" in page_text:
+                        detected = True
+                except Exception:
+                    pass
+
+            if detected:
+                dismiss_selectors = [
+                    "button:has-text('Got it')",
+                    "button:has-text('Got It')",
+                    "button:has-text('Dismiss')",
+                    "button:has-text('OK')",
+                ]
+                btn = await self._find_first_visible(dismiss_selectors, timeout_ms=800)
+                if btn is not None:
+                    try:
+                        await btn.click(timeout=1000)
+                        await asyncio.sleep(0.15)
+                    except Exception:
+                        pass
+                return True
+        except Exception:
+            pass
+        return False
 
     async def _dismiss_common_notice_dialog(self) -> bool:
         if not self.page:
@@ -863,7 +907,7 @@ class MoonshotDriver(BaseDriver):
         await self._disable_kimi_sidebar_mask_pointer_events()
         return not await self._kimi_sidebar_mask_visible()
 
-    async def _open_kimi_toolkit_menu(self, timeout_ms: int = 4000) -> bool:
+    async def _open_kimi_toolkit_menu(self, timeout_ms: int = 1000) -> bool:
         if not self.page:
             return False
 
@@ -871,24 +915,24 @@ class MoonshotDriver(BaseDriver):
             return True
 
         await self._dismiss_kimi_sidebar_overlay()
-        toolkit_button = await self._find_first_visible(["div.toolkit-trigger-btn"], timeout_ms=timeout_ms)
+        toolkit_button = await self._find_first_visible(["div.toolkit-trigger-btn"], timeout_ms=min(1000, timeout_ms))
         if toolkit_button is None:
-            Logger.warning("Moonshot: toolkit trigger button not found.")
+            Logger.debug("Moonshot: toolkit trigger button not found.")
             return False
 
-        if not await self._click_with_fallbacks(toolkit_button, timeout_ms=3000):
-            Logger.warning("Moonshot: toolkit trigger button could not be clicked.")
+        if not await self._click_with_fallbacks(toolkit_button, timeout_ms=1000):
+            Logger.debug("Moonshot: toolkit trigger button could not be clicked.")
             return False
 
         try:
             await self.page.wait_for_selector(
                 "div.toolkit-container",
-                timeout=max(1000, int(timeout_ms)),
+                timeout=max(500, min(1500, int(timeout_ms))),
                 state="visible",
             )
             return True
         except Exception as e:
-            Logger.warning(f"Moonshot: toolkit menu did not open: {e}")
+            Logger.debug(f"Moonshot: toolkit menu did not open: {e}")
             return False
 
     async def _find_first_visible_on_page(
@@ -2410,12 +2454,24 @@ class MoonshotDriver(BaseDriver):
                 return
 
             error_text = str(params.get("errorText") or "network loading failed").strip()
-            if "ERR_ABORTED" in error_text.upper() and cdp_had_data:
-                Logger.debug(
-                    "Moonshot CDP stream ended with net::ERR_ABORTED after data arrived; "
-                    "treating it as complete."
-                )
-                await finish_cdp_stream(request_id)
+            if "ERR_ABORTED" in error_text.upper():
+                if cdp_had_data:
+                    Logger.debug(
+                        "Moonshot CDP stream ended with net::ERR_ABORTED after data arrived; "
+                        "treating it as complete."
+                    )
+                    await finish_cdp_stream(request_id)
+                    return
+                # Check whether Kimi cancelled the request due to capacity throttle
+                if await self._check_and_dismiss_capacity_modal(wait_ms=600):
+                    report_stream_error(self._build_capacity_error_message())
+                    await finish_cdp_stream(request_id, encountered_error=True)
+                    return
+
+            # Also check if capacity modal appeared for any other loading failure
+            if await self._check_and_dismiss_capacity_modal(wait_ms=300):
+                report_stream_error(self._build_capacity_error_message())
+                await finish_cdp_stream(request_id, encountered_error=True)
                 return
 
             message_text = f"Moonshot CDP stream failed: {error_text}"
@@ -3023,30 +3079,32 @@ class MoonshotDriver(BaseDriver):
 
     async def _open_model_picker(self) -> bool:
         await self._dismiss_kimi_sidebar_overlay()
-        trigger = await self._find_first_visible(["div.current-model"], timeout_ms=8000)
-        if trigger is None:
-            Logger.warning("Moonshot: model selector trigger not found.")
-            return False
-
         menu_selectors = [
             "[role='menu']",
             "div.model-list-options",
             "div.kimi-menu-positioner",
             "div.models-container",
         ]
+        if await self._find_first_visible(menu_selectors, timeout_ms=0) is not None:
+            return True
+
+        trigger = await self._find_first_visible(["div.current-model"], timeout_ms=3000)
+        if trigger is None:
+            Logger.warning("Moonshot: model selector trigger not found.")
+            return False
+
         try:
-            if await self._find_first_visible(menu_selectors, timeout_ms=0) is None:
-                clicked = await self._click_with_fallbacks(trigger, timeout_ms=3000)
-                if not clicked:
-                    Logger.warning("Moonshot: model selector trigger could not be clicked.")
-                    return False
+            clicked = await self._click_with_fallbacks(trigger, timeout_ms=2000)
+            if not clicked:
+                Logger.warning("Moonshot: model selector trigger could not be clicked.")
+                return False
             for sel in menu_selectors:
                 try:
-                    await self.page.wait_for_selector(sel, timeout=3000, state="visible")
+                    await self.page.wait_for_selector(sel, timeout=1500, state="visible")
                     return True
                 except Exception:
                     continue
-            if await self._find_first_visible(menu_selectors, timeout_ms=1000) is not None:
+            if await self._find_first_visible(menu_selectors, timeout_ms=800) is not None:
                 return True
         except Exception as e:
             Logger.warning(f"Moonshot: model picker did not open: {e}")
@@ -3164,8 +3222,10 @@ class MoonshotDriver(BaseDriver):
 
     async def _select_kimi_thinking_effort(self, effort: str) -> bool:
         target_effort = self._normalize_kimi_effort(effort)
+        target_norm = self._normalize_text(target_effort)
+
         current = await self._read_current_effort_name()
-        if self._normalize_text(current) == self._normalize_text(target_effort):
+        if self._normalize_text(current) == target_norm:
             return True
 
         if not await self._open_model_picker():
@@ -3176,39 +3236,33 @@ class MoonshotDriver(BaseDriver):
             "div.model-item:has-text('Thinking effort')",
             ".kimi-menu-item:has-text('Thinking effort')",
         ]
-        effort_item = await self._find_first_visible(effort_item_selectors, timeout_ms=2000)
+        effort_item = await self._find_first_visible(effort_item_selectors, timeout_ms=1500)
         if effort_item is None:
             Logger.debug("Moonshot: 'Thinking effort' menuitem not present (unsupported by active model).")
-            try:
-                await self.page.keyboard.press("Escape")
-            except Exception:
-                pass
             return False
 
-        try:
-            await effort_item.hover(timeout=1500)
-            await asyncio.sleep(0.3)
-        except Exception:
-            await self._click_with_fallbacks(effort_item, timeout_ms=1500)
-            await asyncio.sleep(0.3)
+        item_text = self._normalize_text(await self._read_locator_text(effort_item, timeout_ms=400))
+        if target_norm in item_text:
+            return True
 
-        target_norm = self._normalize_text(target_effort)
+        try:
+            await effort_item.hover(timeout=1000)
+            await asyncio.sleep(0.2)
+        except Exception:
+            await self._click_with_fallbacks(effort_item, timeout_ms=1000)
+            await asyncio.sleep(0.2)
+
         sub_items = self.page.locator("[role='menu'] [role='menuitemradio'], div.kimi-menu-positioner [role='menuitemradio']")
         sub_count = await sub_items.count()
         clicked_effort = False
         for i in range(sub_count):
             item = sub_items.nth(i)
-            text = self._normalize_text(await self._read_locator_text(item, timeout_ms=1000))
+            text = self._normalize_text(await self._read_locator_text(item, timeout_ms=500))
             if target_norm in text:
-                clicked = await self._click_with_fallbacks(item, timeout_ms=2000)
+                clicked = await self._click_with_fallbacks(item, timeout_ms=1500)
                 if clicked:
                     clicked_effort = True
                     break
-
-        try:
-            await self.page.keyboard.press("Escape")
-        except Exception:
-            pass
 
         if clicked_effort:
             Logger.info(f"Moonshot: set Thinking Effort to '{target_effort}'.")
@@ -3219,6 +3273,12 @@ class MoonshotDriver(BaseDriver):
 
     async def _select_kimi_context_length(self, length: str) -> bool:
         target_length = self._normalize_kimi_context_length(length)
+        is_extra_long = (target_length == self.CONTEXT_EXTRA_LONG)
+
+        cached_context = getattr(self, "_current_context_length", self.CONTEXT_STANDARD)
+        if cached_context == target_length and target_length == self.CONTEXT_STANDARD:
+            return True
+
         if not await self._open_model_picker():
             return False
 
@@ -3227,46 +3287,45 @@ class MoonshotDriver(BaseDriver):
             "div.model-item:has-text('Context length')",
             ".kimi-menu-item:has-text('Context length')",
         ]
-        context_item = await self._find_first_visible(context_item_selectors, timeout_ms=2000)
+        context_item = await self._find_first_visible(context_item_selectors, timeout_ms=1500)
         if context_item is None:
             Logger.debug("Moonshot: 'Context length' menuitem not present (unsupported by active model).")
-            try:
-                await self.page.keyboard.press("Escape")
-            except Exception:
-                pass
             return False
 
-        try:
-            await context_item.hover(timeout=1500)
-            await asyncio.sleep(0.3)
-        except Exception:
-            await self._click_with_fallbacks(context_item, timeout_ms=1500)
-            await asyncio.sleep(0.3)
+        item_text = self._normalize_text(await self._read_locator_text(context_item, timeout_ms=400))
+        if is_extra_long and ("extra" in item_text or "1m" in item_text):
+            self._current_context_length = target_length
+            return True
+        if (not is_extra_long) and ("standard" in item_text and "extra" not in item_text):
+            self._current_context_length = target_length
+            return True
 
-        is_extra_long = (target_length == self.CONTEXT_EXTRA_LONG)
+        try:
+            await context_item.hover(timeout=1000)
+            await asyncio.sleep(0.2)
+        except Exception:
+            await self._click_with_fallbacks(context_item, timeout_ms=1000)
+            await asyncio.sleep(0.2)
+
         sub_items = self.page.locator("[role='menu'] [role='menuitemradio'], div.kimi-menu-positioner [role='menuitemradio']")
         sub_count = await sub_items.count()
         clicked_context = False
         for i in range(sub_count):
             item = sub_items.nth(i)
-            text = self._normalize_text(await self._read_locator_text(item, timeout_ms=1000))
+            text = self._normalize_text(await self._read_locator_text(item, timeout_ms=500))
             if is_extra_long and ("extra" in text or "1m" in text):
-                clicked = await self._click_with_fallbacks(item, timeout_ms=2000)
+                clicked = await self._click_with_fallbacks(item, timeout_ms=1500)
                 if clicked:
                     clicked_context = True
                     break
             elif (not is_extra_long) and ("standard" in text and "extra" not in text):
-                clicked = await self._click_with_fallbacks(item, timeout_ms=2000)
+                clicked = await self._click_with_fallbacks(item, timeout_ms=1500)
                 if clicked:
                     clicked_context = True
                     break
 
-        try:
-            await self.page.keyboard.press("Escape")
-        except Exception:
-            pass
-
         if clicked_context:
+            self._current_context_length = target_length
             Logger.info(f"Moonshot: set Context Length to '{target_length}'.")
             return True
 
@@ -3313,59 +3372,69 @@ class MoonshotDriver(BaseDriver):
     ):
         configured_model = model_label or self.current_ui_model or self._get_configured_model_friendly()
         if configured_model:
-            current = await self._read_current_model_name()
+            target_model = configured_model
+        else:
+            target_model = self.MODEL_K31_PRO if state else self.MODEL_INSTANT
+
+        target_norm = self._normalize_text(target_model)
+        target_effort = self._normalize_kimi_effort(effort or self._get_configured_deepthink_effort())
+        target_context = self._normalize_kimi_context_length(context_length or self._get_configured_context_length())
+
+        current_model = await self._read_current_model_name()
+        current_effort = await self._read_current_effort_name()
+        cached_context = getattr(self, "_current_context_length", self.CONTEXT_STANDARD)
+
+        model_matches = bool(current_model and self._model_name_matches(self._normalize_text(current_model), target_norm))
+        supports_effort = self._model_supports_thinking_effort(target_model)
+        effort_matches = (not supports_effort) or (self._normalize_text(current_effort) == self._normalize_text(target_effort))
+        supports_context = self._model_supports_context_length(target_model)
+        context_matches = (not supports_context) or (cached_context == target_context and target_context == self.CONTEXT_STANDARD)
+
+        if model_matches and effort_matches and context_matches:
             Logger.debug(
-                f"Moonshot: model selection requested '{configured_model}' "
-                f"(picker currently shows '{current or '<nothing>'}')."
+                f"Moonshot: model '{target_model}' already active with desired settings "
+                f"(effort={target_effort}, context={target_context}). Skipping picker."
             )
-            if self._normalize_text(current) != self._normalize_text(configured_model):
-                switched = await self._select_kimi_model(configured_model)
-                if not switched:
-                    Logger.warning(
-                        f"Moonshot: failed to select configured model '{configured_model}'."
-                    )
-
-            active_model = await self._read_current_model_name() or configured_model
-            if self._model_supports_thinking_effort(active_model):
-                target_effort = effort or self._get_configured_deepthink_effort()
-                if target_effort:
-                    await self._select_kimi_thinking_effort(target_effort)
-
-            if self._model_supports_context_length(active_model):
-                target_context = context_length or self._get_configured_context_length()
-                if target_context:
-                    await self._select_kimi_context_length(target_context)
             return
 
-        current = await self._read_current_model_name()
-        current_norm = self._normalize_text(current)
-        instant_norm = self._normalize_text(self.MODEL_INSTANT)
+        if not await self._open_model_picker():
+            Logger.warning("Moonshot: could not open model picker to apply settings.")
+            return
 
-        target_model = self.MODEL_K31_PRO if state else self.MODEL_INSTANT
-        target_norm = self._normalize_text(target_model)
+        picker_open = True
+        try:
+            if not model_matches:
+                switched = await self._select_kimi_model(target_model)
+                if not switched and not configured_model and state:
+                    for fallback in (self.MODEL_K28_PREVIEW, self.MODEL_THINKING):
+                        switched = await self._select_kimi_model(fallback)
+                        if switched:
+                            target_model = fallback
+                            break
+                if not switched:
+                    Logger.warning(f"Moonshot: failed to select target model '{target_model}'.")
+                picker_open = await self._find_first_visible(
+                    ["[role='menu']", "div.model-list-options", "div.kimi-menu-positioner"],
+                    timeout_ms=300
+                ) is not None
 
-        if current_norm != target_norm:
-            switched = await self._select_kimi_model(target_model)
-            if not switched and state:
-                for fallback in (self.MODEL_K28_PREVIEW, self.MODEL_THINKING):
-                    switched = await self._select_kimi_model(fallback)
-                    if switched:
-                        break
-            if not switched:
-                Logger.warning(
-                    f"Moonshot: failed to set Thinking mode target model '{target_model}'."
-                )
-
-        if state:
             active_model = await self._read_current_model_name() or target_model
-            if self._model_supports_thinking_effort(active_model):
-                target_effort = effort or self._get_configured_deepthink_effort()
-                if target_effort:
+            if self._model_supports_thinking_effort(active_model) and not effort_matches:
+                if not picker_open:
+                    picker_open = await self._open_model_picker()
+                if picker_open:
                     await self._select_kimi_thinking_effort(target_effort)
-            if self._model_supports_context_length(active_model):
-                target_context = context_length or self._get_configured_context_length()
-                if target_context:
+
+            if self._model_supports_context_length(active_model) and not context_matches:
+                if not picker_open:
+                    picker_open = await self._open_model_picker()
+                if picker_open:
                     await self._select_kimi_context_length(target_context)
+        finally:
+            try:
+                await self.page.keyboard.press("Escape")
+            except Exception:
+                pass
 
     async def _find_offline_mode_switch(self):
         """Locate kimi.ai's Offline Mode switch (label "Internet off").
@@ -3416,22 +3485,36 @@ class MoonshotDriver(BaseDriver):
         if switch is not None:
             return not offline_active
 
-        # Legacy kimi.com indicator.
+        # Modern kimi.ai: check for active web search indicators/pills in composer
+        search_pill_selectors = [
+            "div.chat-input [class*='tag']:has-text('Search')",
+            "div.chat-input [class*='tool']:has-text('Search')",
+            "div.chat-input-editor [class*='tag']:has-text('Search')",
+            "div.chat-editor [class*='tool-switch']:has-text('Online')",
+            "div.chat-editor [class*='tool-switch']:has-text('Search')",
+        ]
+        pill = await self._find_first_visible(search_pill_selectors, timeout_ms=150)
+        if pill is not None:
+            return True
+
+        # Legacy kimi.com indicator: if "Internet off" element is actually present and visible, search is off.
         indicator = self.page.locator(
             "div.chat-editor div.tool-switch.open.showClose",
             has_text="Internet off",
         )
         try:
             count = await indicator.count()
-            if count == 0:
+            if count > 0:
+                for idx in range(min(count, 3)):
+                    item = indicator.nth(idx)
+                    if await item.is_visible():
+                        return False
                 return True
-            for idx in range(min(count, 3)):
-                item = indicator.nth(idx)
-                if await item.is_visible():
-                    return False
         except Exception:
-            return True
-        return True
+            pass
+
+        # Modern kimi.ai default: web search is OFF when no search tag/indicator is active in the composer.
+        return False
 
     async def _wait_for_connect_menu_open(self, timeout_ms: int = 1200) -> bool:
         if not self.page:
@@ -3717,10 +3800,10 @@ class MoonshotDriver(BaseDriver):
         switch, _offline_active = await self._find_offline_mode_switch()
         if switch is not None:
             try:
-                clicked = await self._click_with_fallbacks(switch, timeout_ms=3000)
+                clicked = await self._click_with_fallbacks(switch, timeout_ms=2000)
                 if not clicked:
                     raise RuntimeError("offline mode switch was not clickable")
-                await asyncio.sleep(0.4)
+                await asyncio.sleep(0.3)
                 after = await self._is_search_enabled()
                 if after == state:
                     return
@@ -3731,37 +3814,41 @@ class MoonshotDriver(BaseDriver):
                 Logger.warning(f"Moonshot: failed to toggle the Offline Mode switch: {e}")
 
         if state:
-            quick_enable = self.page.locator(
-                "div.chat-editor div.tool-switch.open.showClose",
-                has_text="Internet off",
-            )
-            if await quick_enable.count() > 0:
-                try:
-                    await self._click_with_fallbacks(quick_enable.first, timeout_ms=2000)
-                    await asyncio.sleep(0.15)
-                    if await self._is_search_enabled():
-                        return
-                except Exception:
-                    pass
-
-            ok = await self._set_search_state_via_toolkit(state)
+            # Modern path first: tools menu
+            ok = await self._set_search_state_via_tools_menu(state)
             if not ok:
-                ok = await self._set_search_state_via_tools_menu(state)
+                quick_enable = self.page.locator(
+                    "div.chat-editor div.tool-switch.open.showClose",
+                    has_text="Internet off",
+                )
+                if await quick_enable.count() > 0:
+                    try:
+                        await self._click_with_fallbacks(quick_enable.first, timeout_ms=1500)
+                        await asyncio.sleep(0.15)
+                        if await self._is_search_enabled():
+                            return
+                    except Exception:
+                        pass
+                ok = await self._set_search_state_via_toolkit(state)
             if ok:
-                await asyncio.sleep(0.4)
+                await asyncio.sleep(0.3)
                 if await self._is_search_enabled():
                     return
             self._notice_search_ui_unavailable("enable")
             return
 
-        ok = await self._set_search_state_via_toolkit(state)
+        # Disabling search: modern tools menu first
+        ok = await self._set_search_state_via_tools_menu(state)
         if not ok:
-            ok = await self._set_search_state_via_tools_menu(state)
+            ok = await self._set_search_state_via_toolkit(state)
         if not ok:
+            # If search is already not active, don't warn the user
+            if not await self._is_search_enabled():
+                return
             self._notice_search_ui_unavailable("disable")
             return
 
-        await asyncio.sleep(0.4)
+        await asyncio.sleep(0.3)
         after = await self._is_search_enabled()
         if after != state:
             Logger.warning(f"Moonshot: Search state mismatch after toggle (wanted={state}, actual={after}).")
