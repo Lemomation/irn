@@ -13,6 +13,7 @@
   <a href="https://github.com/Lemomation/irn/releases"><img alt="Latest Release" src="https://img.shields.io/github/v/release/Lemomation/irn?style=flat-square&color=success" /></a>
   <a href="https://github.com/Lemomation/irn/stargazers"><img alt="Stars" src="https://img.shields.io/github/stars/Lemomation/irn?style=flat-square" /></a>
   <a href="https://github.com/Lemomation/irn/issues"><img alt="Issues" src="https://img.shields.io/github/issues/Lemomation/irn?style=flat-square" /></a>
+  <a href="https://ko-fi.com/lemomation"><img alt="Ko-fi" src="https://img.shields.io/badge/Ko--fi-F16061?style=flat-square&logo=ko-fi&logoColor=white" /></a>
   <img alt="Python" src="https://img.shields.io/badge/python-3.12%2B-3776AB?style=flat-square&logo=python&logoColor=white" />
   <a href="LICENSE"><img alt="License" src="https://img.shields.io/github/license/Lemomation/irn?style=flat-square" /></a>
 </p>
@@ -60,6 +61,7 @@ https://github.com/user-attachments/assets/ebf1bfcd-3b23-4614-b584-174791bcb004
 
 <p align="center">
   <a href="https://github.com/Lemomation/irn"><img src=".github/svgs/star2.svg" alt="Leave a Star" height="42"></a>
+  <a href="https://ko-fi.com/lemomation"><img src=".github/svgs/donate.svg" alt="Support the Project" height="42"></a>
 </p>
 
 ## Welcome 👋
