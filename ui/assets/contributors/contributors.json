@@ -1,26 +1,32 @@
 {
   "contributors": [
     {
+      "name": "Lemomation",
+      "status": "Current Maintainer",
+      "avatar_url": "https://avatars.githubusercontent.com/u/204118677?s=500&v=4",
+      "github_url": "https://github.com/Lemomation"
+    },
+    {
       "name": "LyubomirT",
-      "status": "Project Maintainer - Lead Developer",
+      "status": "OG Maintainer",
       "avatar_url": "https://avatars.githubusercontent.com/u/127299159?s=500&v=4",
       "github_url": "https://github.com/LyubomirT"
     },
     {
       "name": "Omega-Slender",
-      "status": "Original Creator - IntenseRP API",
+      "status": "Original Creator",
       "avatar_url": "https://avatars.githubusercontent.com/u/134849645?s=500&v=4",
       "github_url": "https://github.com/Omega-Slender"
     },
     {
       "name": "Deaquay",
-      "status": "Contributor to OG IntenseRP API",
+      "status": "Contributor to OG",
       "avatar_url": "https://avatars.githubusercontent.com/u/103206423?s=500&v=4",
       "github_url": "https://github.com/Deaquay"
     },
     {
       "name": "Targren",
-      "status": "Feedback, Bug Reports, Proposals, Code",
+      "status": "Feedback & Proposals, Code",
       "avatar_url": "https://avatars.githubusercontent.com/u/11566412?s=500&v=4",
       "github_url": "https://github.com/Targren"
     },
@@ -35,6 +41,18 @@
       "status": "Early Testing, Bug Reports, Suggestions",
       "avatar_url": "https://avatars.githubusercontent.com/u/131772052?s=500&v=4",
       "github_url": "https://github.com/Vova12344weq"
+    },
+    {
+      "name": "Phobeuscz",
+      "status": "Past Maintainer",
+      "avatar_url": "https://github.com/Phobeuscz.png",
+      "github_url": "https://github.com/Phobeuscz"
+    },
+    {
+      "name": "TalonHawke",
+      "status": "Past Contributor",
+      "avatar_url": "https://github.com/TalonHawke.png",
+      "github_url": "https://github.com/TalonHawke"
     },
     {
       "name": "wowie1012",

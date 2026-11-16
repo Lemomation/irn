@@ -19,6 +19,7 @@ from utils.logger import Logger
 
 REPOSITORY_URL = "https://github.com/Lemomation/irn"
 DOCS_HOME_URL = "https://lemomation.github.io/irn/"
+KOFI_URL = "https://ko-fi.com/lemomation"
 
 
 class _TileFlowLayout(QLayout):
@@ -305,6 +306,7 @@ class HelpWindow(QMainWindow):
                 [
                     ("Contributors", IconType.CONTRIBUTORS, "", self.show_contributors),
                     ("GitHub", IconType.GITHUB, "Open the IntenseRP Next GitHub repository.", self.open_github),
+                    ("Ko-fi", IconType.KOFI, "Support the project on Ko-fi.", self.open_kofi),
                 ],
             ),
         ]
@@ -401,6 +403,9 @@ class HelpWindow(QMainWindow):
 
     def open_github(self):
         QDesktopServices.openUrl(QUrl(REPOSITORY_URL))
+
+    def open_kofi(self):
+        QDesktopServices.openUrl(QUrl(KOFI_URL))
 
     def open_docs(self):
         QDesktopServices.openUrl(QUrl(DOCS_HOME_URL))

@@ -28,6 +28,7 @@ class IconType(Enum):
     DISCORD = "discord.svg"
     GITHUB = "github.svg"
     DOCS = "book-open-check.svg"
+    KOFI = "kofi.svg"
 
 class IconUtils:
     _SVG_TEXT_CACHE: dict[str, str] = {}

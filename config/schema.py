@@ -1003,12 +1003,13 @@ SCHEMA = [
                 type=SettingType.DROPDOWN,
                 default="Qwen3.7-Plus",
                 options=[
-                    "Qwen4-Max-Preview",
+                    "Qwen4-Max",
                     "Qwen3.8-Max",
                     "Qwen3.8-Omni-Flash",
                     "Qwen3.7-Plus",
                     "Qwen3.7-Max",
                     "Qwen3.5-Omni-Plus",
+                    "Qwen4-Max-Preview",
                     "Qwen3.6-Plus",
                     "Qwen3.5-Plus",
                     "Qwen3.6-Max-Preview",
@@ -1032,6 +1033,7 @@ SCHEMA = [
                     "Qwen2.5-Max",
                 ],
                 deprecated_options=[
+                    "Qwen4-Max-Preview",
                     "Qwen3.6-Plus",
                     "Qwen3.5-Plus",
                     "Qwen3.6-Max-Preview",

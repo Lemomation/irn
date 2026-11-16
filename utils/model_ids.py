@@ -430,9 +430,13 @@ def resolve_parallel_provider_from_model_id(
 
 
 QWEN_DEPRECATED_MODEL_ALIASES: Dict[str, str] = {
-    # 4.0 backend ID aliases (chat.qwen.ai /api/models reports qwen4.0-max-preview)
-    "4-0-max-preview": "Qwen4-Max-Preview",
-    "4.0-max-preview": "Qwen4-Max-Preview",
+    # 4.0 backend ID aliases (chat.qwen.ai reports Qwen4-Max, formerly qwen4.0-max-preview)
+    "4-0-max-preview": "Qwen4-Max",
+    "4.0-max-preview": "Qwen4-Max",
+    "4-max-preview": "Qwen4-Max",
+    "4-0-max": "Qwen4-Max",
+    "4.0-max": "Qwen4-Max",
+    "4-max": "Qwen4-Max",
     # 3.7 previews
     "3-7-max-preview": "Qwen3.7-Max",
     "3.7-max-preview": "Qwen3.7-Max",

@@ -347,12 +347,13 @@ class QwenLMDriver(BaseDriver):
     MODEL_SELECTOR_POPUP_SELECTOR = "div[class*='model-selector-popup']"
 
     MODEL_LABELS: List[str] = [
-        "Qwen4-Max-Preview",
+        "Qwen4-Max",
         "Qwen3.8-Max",
         "Qwen3.8-Omni-Flash",
         "Qwen3.7-Plus",
         "Qwen3.7-Max",
         "Qwen3.5-Omni-Plus",
+        "Qwen4-Max-Preview",
         "Qwen3.6-Plus",
         "Qwen3.5-Plus",
         "Qwen3.6-Max-Preview",
@@ -376,6 +377,7 @@ class QwenLMDriver(BaseDriver):
         "Qwen2.5-Max",
     ]
     RETIRED_MODEL_LABELS: set[str] = {
+        "Qwen4-Max-Preview",
         "Qwen3.6-Plus",
         "Qwen3.5-Plus",
         "Qwen3.6-Max-Preview",
@@ -399,6 +401,7 @@ class QwenLMDriver(BaseDriver):
         "Qwen2.5-Max",
     }
     QWEN_RETIRED_MODEL_FALLBACKS: Dict[str, str] = {
+        "Qwen4-Max-Preview": "Qwen4-Max",
         "Qwen3.6-Plus": "Qwen3.7-Plus",
         "Qwen3.5-Plus": "Qwen3.7-Plus",
     }
