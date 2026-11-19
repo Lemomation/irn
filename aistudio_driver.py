@@ -204,6 +204,8 @@ class AIStudioDriver(BaseDriver):
     MAX_OUTPUT_TOKENS_INPUT_LABEL = "Maximum output tokens"
     ADVANCED_SETTINGS_LABEL = "Expand or collapse advanced settings"
     TERMS_DIALOG_SELECTOR = "div.mat-mdc-dialog-surface.mdc-dialog__surface"
+    COOKIE_NOTIFICATION_BAR_SELECTOR = ".glue-cookie-notification-bar"
+    COOKIE_NOTIFICATION_BAR_STYLE_ID = "irp-hide-cookie-notification-bar"
     UPLOAD_ACK_DIALOG_TITLE_SELECTOR = "div.mat-mdc-dialog-title.mdc-dialog__title.shared-dialog-header"
     UPLOAD_ACK_DIALOG_CONTAINER_SELECTOR = "mat-dialog-container#copyright-acknowledgement-dialog"
     UPLOAD_ACK_ACCEPT_BUTTON_SELECTOR = (
@@ -305,6 +307,7 @@ class AIStudioDriver(BaseDriver):
     INTERCEPT_IDLE_TIMEOUT_S = 75.0
     SEND_CLICK_CONFIRM_TIMEOUT_MS = 2200
     SEND_CLICK_MAX_ATTEMPTS = 3
+    SEND_KEYBOARD_SHORTCUT = "ControlOrMeta+Enter"
     MAX_ANTI_CENSORSHIP_NUDGES = 3
     CAARS_MEANINGFUL_CHUNK_TARGET = 5
     BACKGROUND_RESILIENCE_BROWSER_ARGS: tuple[str, ...] = (
@@ -870,7 +873,32 @@ class AIStudioDriver(BaseDriver):
 
     async def _wait_for_chat_ready(self, timeout_ms: int = 60000) -> bool:
         """Return whether the chat composer becomes visible within the timeout."""
-        return await self._find_first_visible(self.CHAT_READY_SELECTORS, timeout_ms=timeout_ms) is not None
+        ready = await self._find_first_visible(self.CHAT_READY_SELECTORS, timeout_ms=timeout_ms) is not None
+        if ready:
+            await self._hide_cookie_notification_bar()
+        return ready
+
+    async def _hide_cookie_notification_bar(self) -> None:
+        """Hide Google's fixed cookie notice bar, which overlays the composer's Run button."""
+        if not self.page:
+            return
+
+        try:
+            await self.page.evaluate(
+                """(payload) => {
+                    if (document.getElementById(payload.styleId)) return;
+                    const style = document.createElement('style');
+                    style.id = payload.styleId;
+                    style.textContent = `${payload.selector} { display: none !important; }`;
+                    (document.head || document.documentElement).appendChild(style);
+                }""",
+                {
+                    "selector": self.COOKIE_NOTIFICATION_BAR_SELECTOR,
+                    "styleId": self.COOKIE_NOTIFICATION_BAR_STYLE_ID,
+                },
+            )
+        except Exception as e:
+            Logger.debug(f"Google AI Studio: failed to hide the cookie notification bar: {e}")
 
     async def _wait_for_temporary_chat_badge(self, timeout_ms: int = 10000) -> bool:
         """Return whether AI Studio shows its visible Temporary chat indicator."""
@@ -2219,6 +2247,7 @@ class AIStudioDriver(BaseDriver):
 
         started = time.perf_counter()
         Logger.extra_debug("Google AI Studio timing: dismiss transient overlays -> start")
+        await self._hide_cookie_notification_bar()
         try:
             await self.page.evaluate(
                 """() => {
@@ -4024,6 +4053,21 @@ class AIStudioDriver(BaseDriver):
             await self._close_system_prompt_panel()
             return
 
+        try:
+            current_body = await textarea.input_value()
+        except Exception:
+            current_body = None
+        if not system_prompt_text.strip() and current_body == system_prompt_text:
+            # Nothing to clear: AI Studio only shows its save status after an edit, so waiting
+            # for it here would just time out.
+            Logger.extra_debug(
+                "Google AI Studio timing: system-instructions sync -> body already matches; "
+                "skipping write"
+            )
+            await self._close_system_prompt_panel()
+            await self._refocus_composer_before_send()
+            return
+
         body_started = time.perf_counter()
         body_ok = await self._set_text_control_value(
             textarea,
@@ -4294,6 +4338,24 @@ class AIStudioDriver(BaseDriver):
                 Logger.warning(f"Google AI Studio: failed to click the stop button: {e}")
                 return False
 
+    async def _submit_prompt_via_keyboard(self) -> bool:
+        """Submit the composer with AI Studio's Ctrl/Cmd+Enter run shortcut."""
+        if not self.page:
+            return False
+
+        editor = await self._find_first_visible(self.CHAT_READY_SELECTORS, timeout_ms=1500)
+        if editor is None:
+            return False
+
+        try:
+            await editor.focus()
+            await self.page.keyboard.press(self.SEND_KEYBOARD_SHORTCUT)
+            await self._ui_settle_pause(0.25)
+            return True
+        except Exception as e:
+            Logger.debug(f"Google AI Studio: keyboard submit failed: {e}")
+            return False
+
     async def _wait_for_generation_idle(self, timeout_ms: int = 10000) -> bool:
         """Wait until AI Studio no longer shows a visible Stop button."""
         deadline = time.time() + max(0.0, float(timeout_ms) / 1000.0)
@@ -4375,6 +4437,7 @@ class AIStudioDriver(BaseDriver):
                     await self._ui_settle_pause(0.2)
                     continue
 
+            clicked = True
             try:
                 await self._refocus_composer_before_send()
                 await self._click_locator(button, timeout=3000)
@@ -4387,23 +4450,37 @@ class AIStudioDriver(BaseDriver):
                     await self._ui_settle_pause(0.25)
                 except Exception as force_error:
                     last_error = force_error
+                    clicked = False
                     Logger.debug(
                         "Google AI Studio: send button click failed "
                         f"on attempt {attempt}/{self.SEND_CLICK_MAX_ATTEMPTS}: "
                         f"{force_error} (initial click error: {e})"
                     )
                     await self._ui_settle_pause(0.25)
-                    continue
 
-            if await self._wait_for_send_click_observed(
+            if clicked and await self._wait_for_send_click_observed(
                 previous_composer_text=previous_composer_text,
                 previous_prompt_had_media=previous_prompt_had_media,
                 completion_started=completion_started,
             ):
                 return
 
+            # Banners or promos can sit on top of the Run button, so fall back to the keyboard
+            # shortcut, which only needs composer focus. We only get here while the prompt is
+            # still pending, so this does not double-submit.
+            if await self._submit_prompt_via_keyboard() and await self._wait_for_send_click_observed(
+                previous_composer_text=previous_composer_text,
+                previous_prompt_had_media=previous_prompt_had_media,
+                completion_started=completion_started,
+            ):
+                Logger.info(
+                    "Google AI Studio: send button click did not register; "
+                    "submitted with the keyboard shortcut instead."
+                )
+                return
+
             Logger.warning(
-                "Google AI Studio: send click was not confirmed "
+                "Google AI Studio: send was not confirmed "
                 f"on attempt {attempt}/{self.SEND_CLICK_MAX_ATTEMPTS}; retrying."
             )
             await self._ui_settle_pause(0.35)
@@ -5427,6 +5504,7 @@ class AIStudioDriver(BaseDriver):
         cdp_stream_finished = False
         cdp_had_data = False
         cdp_stream_state: Dict[str, Any] | None = None
+        cdp_setup_done = asyncio.Event()
 
         def _build_caars_savior_settings() -> Dict[str, Any]:
             savior_label = str(
@@ -5452,7 +5530,7 @@ class AIStudioDriver(BaseDriver):
             nonlocal response_queue, completion_armed, completion_started
             nonlocal completion_claim_lock, completion_claimed, current_attempt_meta
             nonlocal cdp_active_request_id, cdp_stream_started, cdp_stream_finished
-            nonlocal cdp_had_data, cdp_stream_state
+            nonlocal cdp_had_data, cdp_stream_state, cdp_setup_done
             response_queue = asyncio.Queue()
             completion_armed = asyncio.Event()
             completion_started = asyncio.Event()
@@ -5473,6 +5551,7 @@ class AIStudioDriver(BaseDriver):
             cdp_stream_finished = False
             cdp_had_data = False
             cdp_stream_state = None
+            cdp_setup_done = asyncio.Event()
             cdp_request_methods.clear()
             cdp_pending_response_meta.clear()
 
@@ -5962,6 +6041,16 @@ class AIStudioDriver(BaseDriver):
             if request_id != cdp_active_request_id or cdp_stream_finished:
                 return
 
+            # Short responses can finish loading while streamResourceContent is still in flight;
+            # finalizing now would drop its buffered body and report "no assistant text".
+            if cdp_stream_started and not cdp_setup_done.is_set():
+                try:
+                    await asyncio.wait_for(cdp_setup_done.wait(), timeout=5.0)
+                except Exception:
+                    pass
+                if request_id != cdp_active_request_id or cdp_stream_finished:
+                    return
+
             cdp_stream_finished = True
             if cdp_stream_state is None:
                 meta = cdp_pending_response_meta.get(request_id) or {}
@@ -6036,14 +6125,44 @@ class AIStudioDriver(BaseDriver):
             url = str(meta.get("url") or "")
             Logger.info("Teeing Google AI Studio API response via CDP...")
             Logger.debug(f"Teeing request to: {url}")
+            stream_error: Exception | None = None
             try:
-                result = await cdp_session.send(
-                    "Network.streamResourceContent",
-                    {"requestId": request_id},
-                )
+                try:
+                    result = await cdp_session.send(
+                        "Network.streamResourceContent",
+                        {"requestId": request_id},
+                    )
+                except Exception as exc:
+                    if "already finished loading" not in str(exc):
+                        raise
+                    # The whole response landed before streaming attached; read it back instead.
+                    Logger.debug(
+                        "Google AI Studio CDP: response finished before streaming attached; "
+                        "recovering buffered body..."
+                    )
+                    result = await cdp_session.send(
+                        "Network.getResponseBody",
+                        {"requestId": request_id},
+                    )
+                    if isinstance(result, dict) and not result.get("base64Encoded"):
+                        body_text = str(result.get("body") or "")
+                        await _feed_cdp_stream_chunk(
+                            request_id,
+                            body_text.encode("utf-8", errors="ignore"),
+                        )
+                    elif isinstance(result, dict):
+                        await _feed_base64_cdp_stream_chunk(request_id, result.get("body"))
+                else:
+                    if isinstance(result, dict):
+                        await _feed_base64_cdp_stream_chunk(request_id, result.get("bufferedData"))
             except Exception as exc:
+                stream_error = exc
+            finally:
+                cdp_setup_done.set()
+
+            if stream_error is not None and not cdp_had_data:
                 Logger.warning(
-                    f"Google AI Studio CDP response streaming failed ({exc}); "
+                    f"Google AI Studio CDP response streaming failed ({stream_error}); "
                     "falling back to DOM stream scraping..."
                 )
                 asyncio.create_task(
@@ -6054,10 +6173,8 @@ class AIStudioDriver(BaseDriver):
                     )
                 )
                 await _finish_cdp_stream(request_id)
-                return
-
-            if isinstance(result, dict):
-                await _feed_base64_cdp_stream_chunk(request_id, result.get("bufferedData"))
+            elif stream_error is not None:
+                Logger.debug(f"Google AI Studio CDP: stream setup error after data arrived: {stream_error}")
 
         async def _handle_cdp_request_will_be_sent(params: Any) -> None:
             nonlocal completion_claimed, cdp_active_request_id
