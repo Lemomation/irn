@@ -322,6 +322,8 @@ class AIStudioDriver(BaseDriver):
     LOWEST_LEVEL_BY_MODEL: Dict[str, str] = {
         "gemini-4-carbon": "Low",
         "gemini-4-carbon-preview": "Low",
+        "gemini-4-neon": "Low",
+        "gemini-4-neon-preview": "Low",
         "gemini-4-hydrogen": "Low",
         "gemini-4-hydrogen-preview": "Low",
         "gemini-4-argon": "Low",
@@ -345,6 +347,8 @@ class AIStudioDriver(BaseDriver):
     THINKING_LEVELS_BY_MODEL: Dict[str, tuple[str, ...]] = {
         "gemini-4-carbon": ("Low", "Medium", "High"),
         "gemini-4-carbon-preview": ("Low", "Medium", "High"),
+        "gemini-4-neon": ("Low", "Medium", "High", "Extra High"),
+        "gemini-4-neon-preview": ("Low", "Medium", "High", "Extra High"),
         "gemini-4-hydrogen": ("Low", "Medium", "High", "Extra High"),
         "gemini-4-hydrogen-preview": ("Low", "Medium", "High", "Extra High"),
         "gemini-4-argon": ("Low", "Medium", "High"),
@@ -397,6 +401,13 @@ class AIStudioDriver(BaseDriver):
             "base_id": "gemini-4-carbon",
             "selector_id": "model-carousel-row-models/gemini-4-carbon",
             "is_paid": True,
+            "supports_temperature": False,
+            "supports_top_p": False,
+            "max_output_tokens": 1048576,
+        },
+        "Gemini 4 Neon": {
+            "base_id": "gemini-4-neon",
+            "selector_id": "model-carousel-row-models/gemini-4-neon",
             "supports_temperature": False,
             "supports_top_p": False,
             "max_output_tokens": 1048576,

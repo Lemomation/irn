@@ -148,11 +148,12 @@ Controls the level IntenseRP selects on supported AI Studio models:
 - `Low`
 - `Medium`
 - `High`
-- `Extra High` (available on Gemini 4 Hydrogen)
+- `Extra High` (available on Gemini 4 Hydrogen and Gemini 4 Neon)
 
 :material-arrow-right: **Settings** -> **Provider Behavior** -> **Google AI Studio** -> **Thinking Level**
 
-!!! note "Gemini 4 Hydrogen and Carbon"
+!!! note "Gemini 4 Models (Hydrogen, Carbon, Neon)"
+    **Gemini 4 Neon** supports `Low`, `Medium`, `High` (default), and `Extra High`.
     **Gemini 4 Hydrogen** supports `Low`, `Medium`, `High` (default), and `Extra High`.
     **Gemini 4 Carbon** is a paid model supporting `Low`, `Medium` (default), and `High`.
 

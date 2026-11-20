@@ -1,8 +1,8 @@
 {
-  "version": "2.9.7-rev1",
+  "version": "2.9.7-rev2",
   "aua": true,
   "severity": 3,
   "pu": "none",
   "pufref": "none",
-  "summary": "Updated Qwen to official Qwen4-Max with default CDP Teeing and fixed new chat isolation. Added modern Kimi.ai models (K3.1 Pro, K2.8 Preview, Instant), Thinking Effort and Context Length controls, fixed search check freeze, and added capacity modal recovery. Added Ko-fi link and refreshed contributors list."
+  "summary": "Added support for Google's new Gemini 4 Neon in Google AI Studio with full thinking level controls (Low, Medium, High, Extra High) and 1M context. Includes fixes to dismiss Google's cookie notice bar and recover short CDP responses."
 }

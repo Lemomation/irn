@@ -1952,6 +1952,7 @@ SCHEMA = [
                 default="Gemini 3.1 Pro",
                 options=[
                     "Gemini 4 Carbon",
+                    "Gemini 4 Neon",
                     "Gemini 4 Hydrogen",
                     "Gemini 4 Argon",
                     "Gemini 3.8 Flash",
@@ -2114,6 +2115,7 @@ SCHEMA = [
                 default="Gemini 3.1 Flash Lite",
                 options=[
                     "Gemini 4 Carbon",
+                    "Gemini 4 Neon",
                     "Gemini 4 Hydrogen",
                     "Gemini 4 Argon",
                     "Gemini 3.8 Flash",
