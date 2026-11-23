@@ -27,6 +27,12 @@ match falls back to the normal visible browser.
 The work happens in a supervisor subprocess (``supervisor.py``) so Xlib can never take
 the app down, and the compositor dies with the app. The app side lives in ``client.py``
 and ``controller.py``.
+
+On Windows (``windows.py``) there is no private display: the same browser stays on the
+user's desktop and its windows are made transparent, click-through and unfocusable from
+the moment they are created, so there is nothing to mirror. macOS is not supported: it
+throttles hidden windows to about one frame per second while pages still report
+themselves as visible.
 """
 
 from utils.background_mode.common import BackgroundModeUnavailable

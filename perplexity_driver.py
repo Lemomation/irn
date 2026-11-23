@@ -2117,13 +2117,13 @@ class PerplexityDriver(BaseDriver):
             await self.page.keyboard.press("Control+A")
             await self.page.keyboard.press("Backspace")
 
-            # In Background Mode the browser lives on a private display with its own
-            # clipboard: the app's (desktop) clipboard would paste nothing there. The
+            # In Background Mode on Linux the browser lives on a private display with its
+            # own clipboard: the app's (desktop) clipboard would paste nothing there. The
             # Background Mode supervisor plays the desktop clipboard on that display
             # instead, so the paste looks the same to the page and the user's real
             # clipboard is never touched.
             placed_in_background = False
-            if self.background_mode_active:
+            if self._background_private_clipboard:
                 previous_clipboard = None
                 placed_in_background = await self._set_background_clipboard_text(text)
             else:

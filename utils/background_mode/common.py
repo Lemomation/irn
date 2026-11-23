@@ -24,6 +24,7 @@ SHIM_DIR_NAME = "xwayland"
 
 SESSION_X11 = "x11"
 SESSION_WAYLAND = "wayland"
+SESSION_WINDOWS = "windows"
 
 SAFE_PATH_RE = re.compile(r"^[A-Za-z0-9._/+-]+$")
 

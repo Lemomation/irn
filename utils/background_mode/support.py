@@ -58,8 +58,15 @@ def can_open_visible_browser() -> bool:
 
 def check_background_mode_support(config_dir=None) -> tuple[bool, str]:
     """Cheap host checks before starting anything. Returns (supported, reason_if_not)."""
+    if sys.platform == "win32":
+        return True, ""
+    if sys.platform == "darwin":
+        return False, (
+            "Background Mode is not available on macOS: macOS slows down hidden browser windows "
+            "(about one frame per second), which pages can measure."
+        )
     if not sys.platform.startswith("linux"):
-        return False, "Background Mode is only available on Linux for now."
+        return False, "Background Mode is not available on this system."
 
     session = detect_session()
     if session is None:

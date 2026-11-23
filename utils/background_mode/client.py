@@ -48,6 +48,8 @@ def _supervisor_command() -> tuple[list[str], dict[str, str], Optional[str]]:
 class PrivateDisplay:
     """Handle to a running supervisor and its private display."""
 
+    private_clipboard = True  # The private display has its own clipboard.
+
     def __init__(self, proc: subprocess.Popen, info: dict[str, Any], events: "queue.Queue[dict | None]"):
         self._proc = proc
         self._events = events

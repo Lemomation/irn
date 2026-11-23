@@ -2541,12 +2541,14 @@ SCHEMA = [
                 type=SettingType.BOOLEAN,
                 default=False,
                 tooltip=(
-                    "Linux only (X11 and Wayland desktops). Runs the provider browser on a "
-                    "private, invisible, GPU-accelerated display that mirrors your desktop "
-                    "(screen, refresh rate, GPU, fonts, theme, keyboard, input devices), so "
-                    "provider pages see the same browser as in normal mode while your screen, "
-                    "mouse and keyboard stay free. Keeps working with the monitor off or the lid "
-                    "closed. Needs sway and Xwayland installed. The first start on a desktop runs "
+                    "Linux and Windows. Hides the provider browser while provider pages see the "
+                    "same browser as in normal mode, so your screen, mouse and keyboard stay free. "
+                    "On Linux (X11 and Wayland) the browser runs on a private, invisible, "
+                    "GPU-accelerated display that mirrors your desktop and keeps working with the "
+                    "monitor off or the lid closed; needs sway and Xwayland installed. On Windows "
+                    "the browser stays on your desktop, invisible, click-through and out of the "
+                    "taskbar (its window can appear for an instant when it starts). Not available "
+                    "on macOS. The first start on a desktop runs "
                     "visibly once to calibrate; after that, a start only runs hidden if it matches "
                     "that calibration, otherwise the browser opens normally. If a provider needs "
                     "you to sign in, the browser opens visibly for that session. Restart the "

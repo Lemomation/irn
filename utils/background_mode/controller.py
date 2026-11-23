@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import sys
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Callable, Optional
 
@@ -22,7 +23,12 @@ from utils.background_mode.calibration import (
     save_window_record,
 )
 from utils.background_mode.client import PrivateDisplay, acquire_private_display, release_private_display
-from utils.background_mode.common import SESSION_WAYLAND, BackgroundModeUnavailable, is_software_renderer
+from utils.background_mode.common import (
+    SESSION_WAYLAND,
+    SESSION_WINDOWS,
+    BackgroundModeUnavailable,
+    is_software_renderer,
+)
 from utils.background_mode.support import can_open_visible_browser
 from utils.logger import Logger
 
@@ -258,6 +264,29 @@ class BackgroundModeSession:
         placement = (data.get("browser") or {}).get("window_placement") if isinstance(data, dict) else None
         return dict(placement) if isinstance(placement, dict) else None
 
+    @staticmethod
+    def _release_now(display) -> None:
+        if getattr(display, "session_type", None) == SESSION_WINDOWS:
+            display.stop()
+        else:
+            release_private_display(display)
+
+    async def _acquire_display(self):
+        if sys.platform != "win32":
+            return await acquire_private_display(self._config_dir)
+        from utils.background_mode.windows import open_windows_display
+
+        loop = asyncio.get_running_loop()
+        try:
+            return await loop.run_in_executor(None, open_windows_display, self.driver.playwright)
+        except Exception as exc:
+            raise BackgroundModeUnavailable(f"the window concealer could not start ({exc}).") from exc
+
+    @property
+    def private_clipboard(self) -> bool:
+        """True when the hidden browser has its own clipboard (a private display)."""
+        return bool(self.active and getattr(self.display, "private_clipboard", False))
+
     async def _release_display(self) -> None:
         display, self.display = self.display, None
         self.active = False
@@ -265,7 +294,7 @@ class BackgroundModeSession:
             return
         loop = asyncio.get_running_loop()
         try:
-            await loop.run_in_executor(None, release_private_display, display)
+            await loop.run_in_executor(None, self._release_now, display)
         except Exception as e:
             Logger.debug(f"Error releasing the Background Mode display: {e}")
 
@@ -285,7 +314,7 @@ class BackgroundModeSession:
         if status_callback:
             status_callback("Preparing Background Mode...")
         try:
-            display = await acquire_private_display(self._config_dir)
+            display = await self._acquire_display()
         except BackgroundModeUnavailable as exc:
             reason = str(exc)
             if not can_open_visible_browser():
@@ -311,7 +340,7 @@ class BackgroundModeSession:
             # First start on this desktop setup: run visibly once and record what pages see.
             self.calibrating = True
             loop = asyncio.get_running_loop()
-            await loop.run_in_executor(None, release_private_display, display)
+            await loop.run_in_executor(None, self._release_now, display)
             if not can_open_visible_browser():
                 raise RuntimeError(
                     "Background Mode needs one visible start on this desktop to calibrate, but there "
@@ -337,7 +366,9 @@ class BackgroundModeSession:
             or (self._next_profile_is_fresh() and load_fresh_window(self._config_dir, self.signature, mode) is None)
         ):
             refusal = "calibrate"
-        elif policy.get("imposed"):
+        elif policy.get("imposed") and display.session_type != SESSION_WINDOWS:
+            # (On Windows the hidden window stays on the user's own desktop and window manager,
+            # so whatever the desktop does to it happens in both modes.)
             other = "follow" if self._viewport_mode() == "fixed" else "fixed"
             other_policy = load_window_policy(self._config_dir, self.signature, other)
             hint = ""
@@ -353,7 +384,7 @@ class BackgroundModeSession:
             )
         if refusal is not None:
             loop = asyncio.get_running_loop()
-            await loop.run_in_executor(None, release_private_display, display)
+            await loop.run_in_executor(None, self._release_now, display)
             if not can_open_visible_browser():
                 raise RuntimeError("Background Mode cannot run hidden here and there is no desktop session.")
             if refusal == "calibrate":
@@ -380,10 +411,13 @@ class BackgroundModeSession:
             for o in display.snapshot.get("outputs") or []
         )
         source = "saved desktop snapshot" if display.snapshot_source == "saved" else "live desktop"
-        Logger.info(
-            f"{self._label}: Background Mode on ({display.session_type}). The browser runs on private "
-            f"display {display.description} mirroring your {source} ({outputs})."
-        )
+        if display.session_type == SESSION_WINDOWS:
+            Logger.info(f"{self._label}: Background Mode on (windows). The browser runs on {display.description}.")
+        else:
+            Logger.info(
+                f"{self._label}: Background Mode on ({display.session_type}). The browser runs on private "
+                f"display {display.description} mirroring your {source} ({outputs})."
+            )
         return display.browser_env()
 
     def _next_profile_is_fresh(self) -> bool:
@@ -434,7 +468,7 @@ class BackgroundModeSession:
         self.probe = probe if isinstance(probe, dict) else None
 
         if not self.active:
-            if self.signature and self.probe and self.probe.get("gpuRenderer"):
+            if self.signature and self.probe and (self.probe.get("gpuRenderer") or self.session_type == SESSION_WINDOWS):
                 save_baseline(self._config_dir, self.signature, self._viewport_mode(), self.probe)
                 if self.placement_before is None and self.probe.get("window"):
                     save_fresh_window(self._config_dir, self.signature, self._viewport_mode(), self.probe["window"])
@@ -446,12 +480,18 @@ class BackgroundModeSession:
         if not self.probe:
             raise BackgroundModeUnavailable("could not check the hidden browser against your desktop.")
         renderer = str(self.probe.get("gpuRenderer") or "")
-        if is_software_renderer(renderer):
+        # (On Windows the hidden browser renders exactly like the visible one, on the same desktop.)
+        if is_software_renderer(renderer) and self.session_type != SESSION_WINDOWS:
             raise BackgroundModeUnavailable(
                 f"the private display has no GPU acceleration (WebGL renderer: {renderer or 'none'})."
             )
         baseline = load_baseline(self._config_dir, self.signature or "", self._viewport_mode()) or {}
         mismatches = compare_probes(baseline, self.probe)
+        visibility = self.probe.get("visibility") or []
+        if visibility and visibility[0] != "visible":
+            mismatches.append(f"page visibility ({visibility[0]})")
+        if self.probe.get("framesAlive") is False:
+            mismatches.append("the hidden window is not rendering frames at full rate")
 
         if self.placement_before is None:
             fresh = load_fresh_window(self._config_dir, self.signature or "", self._viewport_mode())
@@ -527,7 +567,7 @@ class BackgroundModeSession:
         text = str(error or "").strip() or error.__class__.__name__
         if isinstance(error, BackgroundModeUnavailable):
             return text
-        return f"the browser could not start on the private display ({text.splitlines()[0]})"
+        return f"the hidden browser could not start ({text.splitlines()[0]})"
 
     # -- sign-in -----------------------------------------------------------
 

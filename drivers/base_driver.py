@@ -1746,6 +1746,11 @@ class BaseDriver(ABC):
         """Drivers call this right before waiting for the user to finish signing in in the browser."""
         self._background.login_needed(reason)
 
+    @property
+    def _background_private_clipboard(self) -> bool:
+        """True when the hidden browser has its own clipboard (Background Mode on Linux)."""
+        return self._background.private_clipboard
+
     async def _set_background_clipboard_text(self, text: str) -> bool:
         """Set the hidden browser's clipboard (Background Mode only); False otherwise."""
         return await self._background.set_clipboard_text(text)

@@ -94,6 +94,15 @@ PROBE_JS = """async () => {
             out.keyboard = [...map.entries()].map((e) => e.join('=')).sort().join(',');
         }
     } catch (e) {}
+    out.visibility = [document.visibilityState, document.hidden, document.hasFocus()];
+    // Frame liveness: a hidden window the OS throttles (macOS app hiding drops to ~1 fps)
+    // still reports "visible", so count frames instead of trusting the visibility state.
+    out.framesAlive = await new Promise((resolve) => {
+        let n = 0;
+        const step = () => { n++; requestAnimationFrame(step); };
+        requestAnimationFrame(step);
+        setTimeout(() => resolve(n >= 15), 600);
+    });
     out.window = [screenX, screenY, outerWidth, outerHeight, innerWidth, innerHeight];
     return out;
 }"""
@@ -111,6 +120,8 @@ _INTRINSIC = {
     # navigator.keyboard is not available on the blank page today; the layout is verified
     # by the supervisor instead. Kept so it is compared if Chromium starts exposing it.
     "keyboard": "keyboard layout",
+    "visibility": "page visibility and focus",
+    "framesAlive": "frame rendering",
 }
 
 
@@ -210,6 +221,8 @@ def compare_probes(baseline: dict[str, Any], probe: dict[str, Any]) -> list[str]
     """Human-readable differences between a visible baseline and a hidden probe."""
     mismatches = []
     for key, label in _INTRINSIC.items():
+        if key not in baseline and key in ("visibility", "framesAlive"):
+            continue  # Recorded by newer versions only; checked once the baseline is refreshed.
         if baseline.get(key) != probe.get(key):
             mismatches.append(f"{label} ({probe.get(key)!r} instead of {baseline.get(key)!r})")
     return mismatches
