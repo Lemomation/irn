@@ -668,6 +668,7 @@ class HuggingChatDriver(BaseDriver):
                 "Please log in to HuggingChat in the browser window, then come back here.",
                 level="info",
             )
+            self._background_login_needed("Auto Login is off, so sign-in has to happen in the browser")
             await self._wait_until_logged_in(timeout_s=None)
             await self._go_to_chat()
             self._mark_active_ece_pair_used()
@@ -684,6 +685,7 @@ class HuggingChatDriver(BaseDriver):
                 "Auto Login is enabled, but no enabled HuggingChat accounts are saved. Please log in manually.",
                 level="warning",
             )
+            self._background_login_needed("Auto Login has no saved account for this provider")
             await self._wait_until_logged_in(timeout_s=None)
             await self._go_to_chat()
             self._mark_active_ece_pair_used()
@@ -726,6 +728,7 @@ class HuggingChatDriver(BaseDriver):
                 "HuggingChat: login form was not available after Start chatting/Login navigation. "
                 "Waiting for manual login..."
             )
+            self._background_login_needed("sign-in needs to be finished in the browser")
             await self._wait_until_logged_in(timeout_s=None)
             await self._go_to_chat()
             self.ece_mark_used(username)
@@ -755,6 +758,7 @@ class HuggingChatDriver(BaseDriver):
             await asyncio.wait_for(self._wait_until_logged_in(timeout_s=None), timeout=90.0)
         except asyncio.TimeoutError:
             Logger.warning("HuggingChat: login not detected after submit. Waiting for manual completion...")
+            self._background_login_needed("sign-in needs to be finished in the browser")
             await self._wait_until_logged_in(timeout_s=None)
 
         await self._go_to_chat()

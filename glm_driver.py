@@ -1382,6 +1382,7 @@ class GLMDriver(BaseDriver):
         auto_login = bool(self.config_manager.get_setting("providers_credentials", "auto_login"))
         if not auto_login:
             Logger.info("GLM Chat: Auto-login disabled. Waiting for manual login...")
+            self._background_login_needed("Auto Login is off, so sign-in has to happen in the browser")
             await self.page.goto(self.AUTH_URL)
             await self._wait_for_chat_ready(timeout_ms=None)
             Logger.success("GLM Chat: manual login detected.")
@@ -1396,6 +1397,7 @@ class GLMDriver(BaseDriver):
                 "GLM Chat: Auto-login is enabled but no accounts are configured in Credential Manager. "
                 "Waiting for manual login..."
             )
+            self._background_login_needed("Auto Login has no saved account for this provider")
             await self.page.goto(self.AUTH_URL)
             await self._wait_for_chat_ready(timeout_ms=None)
             Logger.success("GLM Chat: manual login detected.")
@@ -1455,6 +1457,7 @@ class GLMDriver(BaseDriver):
         )
         Logger.warning("GLM Chat: waiting for CAPTCHA / manual confirmation...")
 
+        self._background_login_needed("a CAPTCHA has to be solved in the browser")
         await self._wait_for_chat_ready(timeout_ms=None)
         Logger.success("GLM Chat: chat ready.")
 

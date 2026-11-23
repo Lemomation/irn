@@ -2536,6 +2536,26 @@ SCHEMA = [
                 docs_anchor="resize-viewport-with-window",
             ),
             SettingField(
+                key="browser_background_mode",
+                label="Background Mode (Hidden Browser)",
+                type=SettingType.BOOLEAN,
+                default=False,
+                tooltip=(
+                    "Linux only (X11 and Wayland desktops). Runs the provider browser on a "
+                    "private, invisible, GPU-accelerated display that mirrors your desktop "
+                    "(screen, refresh rate, GPU, fonts, theme, keyboard, input devices), so "
+                    "provider pages see the same browser as in normal mode while your screen, "
+                    "mouse and keyboard stay free. Keeps working with the monitor off or the lid "
+                    "closed. Needs sway and Xwayland installed. The first start on a desktop runs "
+                    "visibly once to calibrate; after that, a start only runs hidden if it matches "
+                    "that calibration, otherwise the browser opens normally. If a provider needs "
+                    "you to sign in, the browser opens visibly for that session. Restart the "
+                    "provider browser after changing this."
+                ),
+                docs_path=DOCS_RUNTIME_BROWSER_ENVIRONMENT,
+                docs_anchor="background-mode",
+            ),
+            SettingField(
                 key="browser_proxy_url",
                 label="Browser Proxy URL",
                 type=SettingType.STRING,
@@ -3386,6 +3406,7 @@ SETTINGS_CARDS = {
             ("system_settings", "browser_locale"),
             ("system_settings", "browser_timezone"),
             ("system_settings", "browser_resize_viewport_with_window"),
+            ("system_settings", "browser_background_mode"),
             ("system_settings", "browser_proxy_url"),
         ],
     ),

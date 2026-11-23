@@ -290,6 +290,7 @@ class DeepSeekDriver(BaseDriver):
                         "Waiting for manual login..."
                     )
                     try:
+                        self._background_login_needed("Auto Login has no saved account for this provider")
                         await self.page.wait_for_selector("textarea", timeout=0)
                         Logger.success("Manual login detected.")
                     except Exception as e:
@@ -364,6 +365,7 @@ class DeepSeekDriver(BaseDriver):
                 Logger.info("Auto-login disabled. Waiting for manual login...")
                 # Wait indefinitely (or until closed) for the user to log in and reach the chat page
                 try:
+                    self._background_login_needed("Auto Login is off, so sign-in has to happen in the browser")
                     await self.page.wait_for_selector("textarea", timeout=0)
                     Logger.success("Manual login detected.")
                 except Exception as e:

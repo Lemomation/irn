@@ -826,6 +826,7 @@ class MimoDriver(BaseDriver):
                 "Please log in to Xiaomi MiMo in the browser window, then come back here.",
                 level="info",
             )
+            self._background_login_needed("Auto Login is off, so sign-in has to happen in the browser")
             await self._wait_until_logged_in()
             await self.page.goto(self.get_start_url(), wait_until="domcontentloaded", timeout=45000)
             await self._wait_for_chat_ready(timeout_ms=60000)
@@ -842,6 +843,7 @@ class MimoDriver(BaseDriver):
                 "Auto Login is enabled, but no Xiaomi MiMo accounts are saved. Please log in manually.",
                 level="warning",
             )
+            self._background_login_needed("Auto Login has no saved account for this provider")
             await self._wait_until_logged_in()
             await self.page.goto(self.get_start_url(), wait_until="domcontentloaded", timeout=45000)
             await self._wait_for_chat_ready(timeout_ms=60000)
@@ -921,6 +923,7 @@ class MimoDriver(BaseDriver):
                 "Login needs manual attention. Complete Xiaomi's prompt in the browser window; IntenseRP will keep waiting.",
                 level="warning",
             )
+            self._background_login_needed("sign-in needs to be finished in the browser")
             await self._wait_until_logged_in()
 
         try:
