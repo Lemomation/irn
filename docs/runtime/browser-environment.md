@@ -82,7 +82,7 @@ On Windows there are none. On Linux:
 
 - an X11 or Wayland desktop session
 - `sway` installed, plus `Xwayland`, `xrandr` and `setxkbmap` on X11 desktops: Debian/Ubuntu/Mint `sudo apt install sway xwayland x11-xserver-utils x11-xkb-utils`, Fedora `sudo dnf install sway xorg-x11-server-Xwayland xrandr setxkbmap`, Arch `sudo pacman -S sway xorg-xwayland xorg-xrandr xorg-setxkbmap`. IntenseRP names whatever is missing.
-- a GPU sway supports. sway doesn't run with NVIDIA's proprietary driver, so Background Mode stays off there.
+- a GPU sway supports. sway may refuse to run with NVIDIA's proprietary driver; IntenseRP then says so and opens the browser normally.
 - access to the GPU render node (`/dev/dri/renderD*`). Desktop logins usually have it. To use Background Mode without an active desktop session, add yourself to the `render` group: `sudo usermod -aG render $USER`
 
 ### Known limits

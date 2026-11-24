@@ -535,7 +535,7 @@ def _compositor_exit_reason(compositor_log: str) -> str:
     except Exception:
         text = ""
     if "Proprietary Nvidia drivers are NOT supported" in text:
-        return "sway does not run with NVIDIA's proprietary driver, which the private display needs"
+        return "sway refused to run with NVIDIA's proprietary driver, which the private display needs"
     return f"the compositor exited during startup (see {compositor_log})"
 
 
