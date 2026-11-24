@@ -21,6 +21,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import threading
 import time
 from pathlib import Path
 from typing import Any, Optional
@@ -146,7 +147,7 @@ class Supervisor:
             f"printf '%s\\n%s\\n%s\\n%s\\n' \"$WAYLAND_DISPLAY\" \"$DISPLAY\" \"$SWAYSOCK\" \"$XDG_RUNTIME_DIR\" > '{ready}.tmp' "
             f"&& mv '{ready}.tmp' '{ready}'\n"
             # Watchdog: if the supervisor or the app disappears, take the compositor down.
-            f"while kill -0 {int(os.getpid())} 2>/dev/null && kill -0 {int(parent_pid)} 2>/dev/null; do sleep 2; done\n"
+            f"while [ -S \"$SWAYSOCK\" ] && kill -0 {int(os.getpid())} 2>/dev/null && kill -0 {int(parent_pid)} 2>/dev/null; do sleep 2; done\n"
             f"'{swaymsg}' exit >/dev/null 2>&1\n",
             encoding="utf-8",
         )
@@ -248,7 +249,7 @@ class Supervisor:
         deadline = time.monotonic() + 25.0
         while not ready.exists():
             if self.sway.poll() is not None:
-                raise RuntimeError(f"the compositor exited during startup (see {compositor_log})")
+                raise RuntimeError(_compositor_exit_reason(compositor_log))
             if time.monotonic() > deadline:
                 raise RuntimeError(f"the compositor did not start in time (see {compositor_log})")
             time.sleep(0.05)
@@ -380,6 +381,19 @@ class Supervisor:
                 "info",
             )
 
+    def _wait_for_helpers(self, timeout_s: float = 10.0) -> None:
+        """Fail the start (the app then opens the browser visibly) if a helper did not come up."""
+        deadline = time.monotonic() + timeout_s
+        for thread in (self.placer, self.x_clipboard, self.seat):
+            ready = getattr(thread, "ready", None)
+            while thread is not None and ready is not None and not ready.is_set() and thread.is_alive():
+                if time.monotonic() > deadline:
+                    raise RuntimeError(f"a private display helper ({thread.name}) did not start")
+                time.sleep(0.02)
+        problem = self.health_problem()
+        if problem:
+            raise RuntimeError(problem)
+
     def start(self, request: dict[str, Any]) -> dict[str, Any]:
         snapshot, source = self._choose_snapshot(request)
         self.session = str(snapshot.get("session_type") or SESSION_X11)
@@ -387,6 +401,7 @@ class Supervisor:
             self._start_wayland(snapshot, request)
         else:
             self._start_x11(snapshot, request)
+        self._wait_for_helpers()
         return {
             "display": self.x_display,
             "wayland_socket": self.wayland_socket,
@@ -485,6 +500,19 @@ class Supervisor:
                 pass
             self.xwayland_wrapper = None
 
+    def health_problem(self) -> Optional[str]:
+        """Why the private display can no longer mirror the desktop, else None."""
+        if self.sway is None or self.sway.poll() is not None:
+            return "the private compositor exited"
+        for name, thread in (
+            ("window placement", self.placer),
+            ("clipboard", self.x_clipboard),
+            ("virtual input", self.seat),
+        ):
+            if thread is not None and not thread.is_alive():
+                return f"the private display's {name} helper stopped"
+        return None
+
     def stop(self) -> None:
         if self.placer is not None:
             self.placer.stop_event.set()
@@ -501,9 +529,29 @@ class Supervisor:
         self._teardown_compositor()
 
 
+def _compositor_exit_reason(compositor_log: str) -> str:
+    try:
+        text = Path(compositor_log).read_text(encoding="utf-8", errors="replace")[-20000:]
+    except Exception:
+        text = ""
+    if "Proprietary Nvidia drivers are NOT supported" in text:
+        return "sway does not run with NVIDIA's proprietary driver, which the private display needs"
+    return f"the compositor exited during startup (see {compositor_log})"
+
+
+def _watch_health(supervisor: Supervisor, stop_event: threading.Event) -> None:
+    """Report a failed compositor or helper once; the app then closes the hidden browser."""
+    while not stop_event.wait(1.0):
+        problem = supervisor.health_problem()
+        if problem and not stop_event.is_set():
+            _emit("fatal", message=problem)
+            return
+
+
 def serve() -> int:
     supervisor = Supervisor()
     started = False
+    health_stop = threading.Event()
     try:
         for raw in sys.stdin:
             raw = raw.strip()
@@ -522,6 +570,9 @@ def serve() -> int:
                     return 1
                 started = True
                 _emit("ready", **info)
+                threading.Thread(
+                    target=_watch_health, args=(supervisor, health_stop), name="irp-bg-health", daemon=True
+                ).start()
             elif cmd == "clipboard":
                 _emit("reply", id=request.get("id"), **supervisor.set_clipboard(str(request.get("text") or "")))
             elif cmd == "maximize_hint" and supervisor.placer is not None:
@@ -533,6 +584,7 @@ def serve() -> int:
             elif cmd == "stop":
                 break
     finally:
+        health_stop.set()
         supervisor.stop()
     return 0
 

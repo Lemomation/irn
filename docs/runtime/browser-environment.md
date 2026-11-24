@@ -63,6 +63,8 @@ On X11, the exact refresh rate needs a C compiler such as `gcc` once (IntenseRP 
 On Windows the browser stays on your own desktop, so its screen, GPU, fonts and scaling are the real ones. Each browser window is made fully transparent and click-through from the moment it opens, is kept out of the taskbar and Alt+Tab, and never keeps the keyboard focus, so what you type goes to your own apps. Windows still draws the hidden window as usual, so pages keep running at full speed.
 
 - When the browser starts, its window can appear for an instant before it is hidden.
+- Each hidden start checks the screen itself to confirm the window is invisible. If your GPU or driver ignores window transparency, that start opens normally and tells you why.
+- If the keyboard focus can't be given back to your window, or a browser window can't be hidden, IntenseRP closes the hidden browser.
 - The hidden browser behaves like any other window on your desktop: when the screen is locked or the display turns off, it does what a visible browser would do.
 - Nothing needs to be installed.
 
@@ -79,7 +81,8 @@ The first start on a desktop (and the first one in each viewport mode) runs **vi
 On Windows there are none. On Linux:
 
 - an X11 or Wayland desktop session
-- `sway` and `Xwayland` installed: Debian/Ubuntu/Mint `sudo apt install sway xwayland`, Fedora `sudo dnf install sway xorg-x11-server-Xwayland`, Arch `sudo pacman -S sway xorg-xwayland`
+- `sway` installed, plus `Xwayland`, `xrandr` and `setxkbmap` on X11 desktops: Debian/Ubuntu/Mint `sudo apt install sway xwayland x11-xserver-utils x11-xkb-utils`, Fedora `sudo dnf install sway xorg-x11-server-Xwayland xrandr setxkbmap`, Arch `sudo pacman -S sway xorg-xwayland xorg-xrandr xorg-setxkbmap`. IntenseRP names whatever is missing.
+- a GPU sway supports. sway doesn't run with NVIDIA's proprietary driver, so Background Mode stays off there.
 - access to the GPU render node (`/dev/dri/renderD*`). Desktop logins usually have it. To use Background Mode without an active desktop session, add yourself to the `render` group: `sudo usermod -aG render $USER`
 
 ### Known limits
@@ -92,6 +95,9 @@ These apply to Linux.
 - On Wayland desktops, a browser window that was last used **maximized** opens visibly; un-maximize it once.
 - On Wayland desktops, windows a site opens itself (for example a Google sign-in popup during Auto Login) cannot be reproduced exactly. During sign-in IntenseRP reopens the browser visibly for that session; later popups are logged as a warning.
 - On Wayland desktops with several keyboard layouts, the hidden browser starts on the first layout (on X11 it uses the one that is active).
+
+!!! note "If Background Mode stops"
+    If the private display (Linux) or the window concealer (Windows) stops while a provider is running, IntenseRP closes the hidden browser rather than let it keep running differently, and tells you. Click Start to relaunch.
 
 !!! note "Signing in"
     When a provider needs you in the browser (Auto Login off, no saved account, CAPTCHA, extra confirmation), IntenseRP reopens the same browser profile in a visible window for that session. Your session is saved, so the next start runs in the background again.

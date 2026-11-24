@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import json
 import sys
+import threading
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Callable, Optional
 
@@ -22,7 +23,7 @@ from utils.background_mode.calibration import (
     save_window_policy,
     save_window_record,
 )
-from utils.background_mode.client import PrivateDisplay, acquire_private_display, release_private_display
+from utils.background_mode.client import acquire_private_display, release_private_display
 from utils.background_mode.common import (
     SESSION_WAYLAND,
     SESSION_WINDOWS,
@@ -45,13 +46,21 @@ LOGIN_TIMEOUT_S = 300.0
 _PLAYWRIGHT_LINUX_WINDOW_INSETS = (8, 85 + 46)
 _PLAYWRIGHT_DEFAULT_VIEWPORT = (1280, 720)
 
+# One hidden launch at a time, process-wide: settle() and the probe wait for "the new
+# window", which parallel provider starts would otherwise confuse. (A threading lock,
+# polled, because parallel drivers may run on different event loops.)
+_LAUNCH_SLOT = threading.Lock()
+# A hidden start that waited this long for the slot opens visibly instead.
+_LAUNCH_SLOT_WAIT_S = 120.0
+
 
 class BackgroundModeSession:
     """Background Mode state for one provider driver."""
 
     def __init__(self, driver: "BaseDriver"):
         self.driver = driver
-        self.display: Optional[PrivateDisplay] = None
+        # client.PrivateDisplay (Linux) or windows.WindowsDisplay.
+        self.display: Optional[Any] = None
         self.active = False
         self.enabled_for_start = False
         self.calibrating = False
@@ -63,6 +72,8 @@ class BackgroundModeSession:
         self.login_event: Optional[asyncio.Event] = None
         self.login_reason: Optional[str] = None
         self.login_notice_sent = False
+        self._holds_launch_slot = False
+        self._health_task: Optional[asyncio.Task] = None
 
     # -- helpers -----------------------------------------------------------
 
@@ -274,13 +285,62 @@ class BackgroundModeSession:
     async def _acquire_display(self):
         if sys.platform != "win32":
             return await acquire_private_display(self._config_dir)
-        from utils.background_mode.windows import open_windows_display
+        try:
+            from utils.background_mode.windows import open_windows_display
+        except Exception as exc:
+            raise BackgroundModeUnavailable(f"the window concealer could not load ({exc}).") from exc
 
         loop = asyncio.get_running_loop()
+        future = loop.run_in_executor(None, open_windows_display, self.driver.playwright)
         try:
-            return await loop.run_in_executor(None, open_windows_display, self.driver.playwright)
+            return await asyncio.shield(future)
+        except asyncio.CancelledError:
+            # The start was cancelled while the concealer was starting: stop it once it is up.
+            future.add_done_callback(
+                lambda f: f.cancelled() or f.exception() is not None or self._release_in_thread(f.result())
+            )
+            raise
         except Exception as exc:
             raise BackgroundModeUnavailable(f"the window concealer could not start ({exc}).") from exc
+
+    def _release_in_thread(self, display) -> None:
+        threading.Thread(target=self._release_now, args=(display,), name="irp-bg-release", daemon=True).start()
+
+    async def _take_launch_slot(self) -> bool:
+        deadline = asyncio.get_running_loop().time() + _LAUNCH_SLOT_WAIT_S
+        while not _LAUNCH_SLOT.acquire(blocking=False):
+            if asyncio.get_running_loop().time() > deadline:
+                return False
+            await asyncio.sleep(0.05)
+        self._holds_launch_slot = True
+        return True
+
+    def _free_launch_slot(self) -> None:
+        if self._holds_launch_slot:
+            self._holds_launch_slot = False
+            _LAUNCH_SLOT.release()
+
+    def health_problem(self) -> Optional[str]:
+        """Why a running hidden browser must stop (its display or concealer failed), else None."""
+        display = self.display
+        if not self.active or display is None:
+            return None
+        try:
+            if display.alive():
+                return None
+            return getattr(display, "dead_reason", None) or "the hidden display stopped"
+        except Exception as e:
+            return f"the hidden display could not be checked ({e})"
+
+    async def _watch_health(self) -> None:
+        """While running hidden (from the first page on, sign-in included), stop on a failed display."""
+        while self.active:
+            await asyncio.sleep(1.0)
+            problem = self.health_problem()
+            if problem:
+                self._health_task = None
+                await self.driver._stop_failed_background_browser(problem)
+                return
 
     @property
     def private_clipboard(self) -> bool:
@@ -288,13 +348,17 @@ class BackgroundModeSession:
         return bool(self.active and getattr(self.display, "private_clipboard", False))
 
     async def _release_display(self) -> None:
+        self._free_launch_slot()
+        task, self._health_task = self._health_task, None
+        if task is not None and task is not asyncio.current_task():
+            task.cancel()
         display, self.display = self.display, None
         self.active = False
         if display is None:
             return
         loop = asyncio.get_running_loop()
         try:
-            await loop.run_in_executor(None, self._release_now, display)
+            await asyncio.shield(loop.run_in_executor(None, self._release_now, display))
         except Exception as e:
             Logger.debug(f"Error releasing the Background Mode display: {e}")
 
@@ -307,6 +371,9 @@ class BackgroundModeSession:
         self.signature = None
         self.probe = None
         self.login_notice_sent = False
+        self.user_data_dir = None
+        self.placement_before = None
+        self._free_launch_slot()
         self.enabled_for_start = self.enabled()
         if not self.enabled_for_start:
             return None
@@ -331,6 +398,22 @@ class BackgroundModeSession:
             )
             return None
 
+        released: list[bool] = []
+        try:
+            return await self._prepare_with_display(display, released)
+        finally:
+            if self.display is not display and not released:
+                # An error or cancellation before this session took the display over.
+                self._release_in_thread(display)
+
+    async def _prepare_with_display(self, display, released: list[bool]) -> Optional[dict[str, str]]:
+        """prepare() once a display is acquired. Returns None after releasing it (visible start)."""
+
+        async def release() -> None:
+            released.append(True)
+            loop = asyncio.get_running_loop()
+            await asyncio.shield(loop.run_in_executor(None, self._release_now, display))
+
         self.signature = desktop_signature(display.snapshot)
         self.session_type = display.session_type
         if not (
@@ -339,8 +422,7 @@ class BackgroundModeSession:
         ):
             # First start on this desktop setup: run visibly once and record what pages see.
             self.calibrating = True
-            loop = asyncio.get_running_loop()
-            await loop.run_in_executor(None, self._release_now, display)
+            await release()
             if not can_open_visible_browser():
                 raise RuntimeError(
                     "Background Mode needs one visible start on this desktop to calibrate, but there "
@@ -383,8 +465,7 @@ class BackgroundModeSession:
                 f"{policy.get('size')}), which the private display cannot reproduce.{hint}"
             )
         if refusal is not None:
-            loop = asyncio.get_running_loop()
-            await loop.run_in_executor(None, self._release_now, display)
+            await release()
             if not can_open_visible_browser():
                 raise RuntimeError("Background Mode cannot run hidden here and there is no desktop session.")
             if refusal == "calibrate":
@@ -403,6 +484,13 @@ class BackgroundModeSession:
                 )
             return None
 
+        if not await self._take_launch_slot():
+            await release()
+            Logger.warning(
+                f"{self._label}: Background Mode is unavailable (another hidden start did not finish). "
+                "Opening the browser normally."
+            )
+            return None
         self.display = display
         self.active = True
         display.mark_launch()
@@ -445,14 +533,33 @@ class BackgroundModeSession:
         raised and the caller relaunches visibly. Visible runs with the setting on record
         the baseline.
         """
+        try:
+            await self._check_launch()
+        finally:
+            self._free_launch_slot()
+
+    async def _check_launch(self) -> None:
         if not self.enabled_for_start or self.driver.page is None:
             return
         if self.active and self.display is not None:
             # Playwright resizes the window for the viewport right after page creation; wait
-            # until it sits where the desktop's window manager would put it.
+            # until it sits where the desktop's window manager would put it (on Windows:
+            # until it is concealed).
             settled = await self.display.settle(timeout_s=8.0)
             if not settled.get("ok"):
-                Logger.debug(f"{self._label}: Background Mode window placement: {settled}")
+                error = settled.get("error") or "unknown error"
+                if self.display.session_type == SESSION_WINDOWS:
+                    raise BackgroundModeUnavailable(f"the browser window could not be hidden ({error}).")
+                raise BackgroundModeUnavailable(
+                    f"the browser window did not settle where your desktop would put it ({error})."
+                )
+            if self.display.session_type == SESSION_WINDOWS:
+                try:
+                    problem = await self.display.verify_on_screen(self.driver.page)
+                except Exception as e:
+                    problem = f"could not check that the browser window is hidden ({e})"
+                if problem:
+                    raise BackgroundModeUnavailable(f"{problem}.")
             if self.display.session_type == SESSION_WAYLAND:
                 await self._restore_wayland_origin()
                 self._watch_wayland_popups()
@@ -469,10 +576,15 @@ class BackgroundModeSession:
 
         if not self.active:
             if self.signature and self.probe and (self.probe.get("gpuRenderer") or self.session_type == SESSION_WINDOWS):
-                save_baseline(self._config_dir, self.signature, self._viewport_mode(), self.probe)
-                if self.placement_before is None and self.probe.get("window"):
-                    save_fresh_window(self._config_dir, self.signature, self._viewport_mode(), self.probe["window"])
-                await self._learn_window_policy()
+                # Bookkeeping only: a visible start must never fail because of it.
+                try:
+                    save_baseline(self._config_dir, self.signature, self._viewport_mode(), self.probe)
+                    if self.placement_before is None and self.probe.get("window"):
+                        save_fresh_window(self._config_dir, self.signature, self._viewport_mode(), self.probe["window"])
+                    await self._learn_window_policy()
+                except Exception as e:
+                    Logger.warning(f"{self._label}: could not save the Background Mode calibration: {e}")
+                    return
                 if self.calibrating:
                     Logger.info(f"{self._label}: Background Mode calibration recorded for this desktop.")
             return
@@ -527,6 +639,7 @@ class BackgroundModeSession:
                 "the hidden browser would not look like your normal one: " + "; ".join(mismatches) + "."
             )
         Logger.info(f"{self._label}: Background Mode matches your desktop (GPU: {renderer}).")
+        self._health_task = asyncio.create_task(self._watch_health())
 
     async def fall_back_to_visible(
         self, reason: str, status_callback: StatusCallback = None, *, for_login: bool = False
@@ -686,21 +799,27 @@ class BackgroundModeSession:
         if not self.enabled_for_start or not self.user_data_dir:
             return
         if self.active:
-            self._fix_up_hidden_placement()
+            if self.session_type != SESSION_WINDOWS:
+                # (On Windows the hidden window is on the real desktop, so Chromium already
+                # saved what a visible run saves.)
+                self._fix_up_hidden_placement()
         elif self.signature and self.probe and self.probe.get("window"):
             # Remember where the desktop's window manager put this profile's window, keyed
             # by the placement Chromium saved; the next hidden start from that placement
             # must end up in the same spot.
-            save_window_record(
-                self._config_dir,
-                self.user_data_dir,
-                {
-                    "signature": self.signature,
-                    "placement": self._read_placement(self.user_data_dir),
-                    "follow_window": self._setting("browser_resize_viewport_with_window"),
-                    "window": self.probe.get("window"),
-                },
-            )
+            try:
+                save_window_record(
+                    self._config_dir,
+                    self.user_data_dir,
+                    {
+                        "signature": self.signature,
+                        "placement": self._read_placement(self.user_data_dir),
+                        "follow_window": self._setting("browser_resize_viewport_with_window"),
+                        "window": self.probe.get("window"),
+                    },
+                )
+            except Exception as e:
+                Logger.warning(f"{self._label}: could not save the Background Mode window record: {e}")
         self.probe = None
         self.placement_before = None
 

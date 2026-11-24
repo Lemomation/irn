@@ -56,6 +56,17 @@ def can_open_visible_browser() -> bool:
     )
 
 
+# Package per tool for each _INSTALLERS entry.
+_INSTALLERS = (("Debian/Ubuntu/Mint", "sudo apt install"), ("Fedora", "sudo dnf install"), ("Arch", "sudo pacman -S"))
+_PACKAGES = {
+    "sway": ("sway", "sway", "sway"),
+    "swaymsg": ("sway", "sway", "sway"),
+    "Xwayland": ("xwayland", "xorg-x11-server-Xwayland", "xorg-xwayland"),
+    "xrandr": ("x11-xserver-utils", "xrandr", "xorg-xrandr"),
+    "setxkbmap": ("x11-xkb-utils", "setxkbmap", "xorg-setxkbmap"),
+}
+
+
 def check_background_mode_support(config_dir=None) -> tuple[bool, str]:
     """Cheap host checks before starting anything. Returns (supported, reason_if_not)."""
     if sys.platform == "win32":
@@ -83,14 +94,14 @@ def check_background_mode_support(config_dir=None) -> tuple[bool, str]:
 
     needed = ["sway", "swaymsg"]
     if session == SESSION_X11:
-        needed.append("Xwayland")
+        needed += ["Xwayland", "xrandr", "setxkbmap"]
     missing = [name for name in needed if not shutil.which(name)]
     if missing:
-        return False, (
-            f"missing {', '.join(missing)}. Install sway and Xwayland "
-            "(Debian/Ubuntu/Mint: sudo apt install sway xwayland; Fedora: sudo dnf install sway "
-            "xorg-x11-server-Xwayland; Arch: sudo pacman -S sway xorg-xwayland)."
+        hints = "; ".join(
+            f"{distro}: {command} {' '.join(dict.fromkeys(_PACKAGES[name][i] for name in missing))}"
+            for i, (distro, command) in enumerate(_INSTALLERS)
         )
+        return False, f"missing {', '.join(missing)}. Install them ({hints})."
 
     render_nodes = sorted(glob.glob("/dev/dri/renderD*"))
     if not render_nodes:

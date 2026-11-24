@@ -10,6 +10,7 @@ import os
 import re
 import sys
 import tempfile
+import threading
 from pathlib import Path
 from typing import Any, Optional
 
@@ -52,18 +53,30 @@ def state_dir(config_dir: str | Path | None) -> Path:
     return path
 
 
+# Providers can start in parallel; hold this around every read-modify-write of a state file.
+STATE_LOCK = threading.RLock()
+
+
 def read_json(path: Path) -> Optional[dict[str, Any]]:
     try:
-        data = json.loads(path.read_text(encoding="utf-8"))
+        with STATE_LOCK:
+            data = json.loads(path.read_text(encoding="utf-8"))
     except Exception:
         return None
     return data if isinstance(data, dict) else None
 
 
 def write_json(path: Path, data: dict[str, Any]) -> None:
-    tmp = path.with_name(path.name + ".tmp")
-    tmp.write_text(json.dumps(data, indent=1, sort_keys=True), encoding="utf-8")
-    tmp.replace(path)
+    tmp = path.with_name(f"{path.name}.{os.getpid()}.{threading.get_ident()}.tmp")
+    with STATE_LOCK:
+        try:
+            tmp.write_text(json.dumps(data, indent=1, sort_keys=True), encoding="utf-8")
+            tmp.replace(path)
+        finally:
+            try:
+                tmp.unlink()
+            except OSError:
+                pass
 
 
 def load_desktop_snapshot(config_dir: str | Path | None) -> Optional[dict[str, Any]]:

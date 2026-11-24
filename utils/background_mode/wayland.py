@@ -389,6 +389,7 @@ class PrivateSeat(threading.Thread):
         super().__init__(name="irp-bg-wayland-seat", daemon=True)
         self.conn = WlConnection(socket_path)
         self.stop_event = threading.Event()
+        self.ready = threading.Event()
         self.wake_r, self.wake_w = os.pipe()
         self.commands: list[tuple[str, Any, threading.Event, dict]] = []
         self.commands_lock = threading.Lock()
@@ -502,6 +503,7 @@ class PrivateSeat(threading.Thread):
         return {"ok": True}
 
     def run(self) -> None:
+        self.ready.set()
         try:
             while not self.stop_event.is_set():
                 ready, _, _ = select.select([self.conn.sock, self.wake_r], [], [], 0.5)

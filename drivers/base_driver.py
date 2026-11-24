@@ -124,7 +124,7 @@ class BaseDriver(ABC):
         self._minimized_hmm_notice_sent = False
         self._last_mouse_position: tuple[float, float] | None = None
 
-        # Background Mode (hidden browser on a private display), see utils/background_mode.
+        # Background Mode (hidden browser), see utils/background_mode.
         self._background = BackgroundModeSession(self)
 
     def _ece_select_least_used(self) -> bool:
@@ -1763,7 +1763,7 @@ class BaseDriver(ABC):
         launch_env: dict[str, str] | None,
     ) -> None:
         """Launch Chromium (persistent or not) and pick the first page."""
-        # Background Mode passes the private display's environment; None keeps the default.
+        # Background Mode passes the private display's environment on Linux; None keeps the default.
         env_kwargs: dict[str, Any] = {"env": launch_env} if launch_env is not None else {}
 
         if persistent_sessions:
@@ -2129,7 +2129,7 @@ class BaseDriver(ABC):
             except Exception as e:
                 Logger.debug(f"Error stopping Playwright: {e}")
 
-        # Only after Chromium is gone: the private display is shared between providers.
+        # Only after Chromium is gone (on Linux the private display is shared between providers).
         try:
             await self._background.on_close()
         except Exception as e:
@@ -2174,7 +2174,30 @@ class BaseDriver(ABC):
 
             await asyncio.sleep(2.0)
 
-    async def _handle_crash(self) -> None:
+    async def _stop_failed_background_browser(self, reason: str) -> None:
+        """A hidden browser whose private display or window concealer failed must not keep running."""
+        Logger.warning(
+            f"{self.provider_label}: Background Mode stopped working ({reason}). Closing the hidden browser."
+        )
+        self.notify_user(
+            f"{self.provider_label}: Background Mode Stopped",
+            "The hidden browser was closed. Click Start to relaunch the driver.",
+            level="warning",
+            dialog_message=(
+                f"Background Mode stopped working: {reason}.\n\n"
+                "The hidden browser was closed so it cannot keep running differently from your normal "
+                "browser. Click Start to relaunch the driver."
+            ),
+        )
+        try:
+            await self._close_browser_only()
+            await self._background.on_close()
+        except Exception as e:
+            Logger.debug(f"Error closing the hidden browser: {e}")
+        # (During startup the start itself fails next; afterwards this is a crash.)
+        await self._handle_crash(notify=False)
+
+    async def _handle_crash(self, *, notify: bool = True) -> None:
         """
         Handles the crash event.
         """
@@ -2185,7 +2208,7 @@ class BaseDriver(ABC):
         self.is_running = False
         self.monitoring_active = False
 
-        if self._notify_on_driver_crash_enabled():
+        if notify and self._notify_on_driver_crash_enabled():
             self.notify_user(
                 f"{self.provider_label} Driver",
                 "Browser was closed or crashed. Click Start to relaunch the driver.",

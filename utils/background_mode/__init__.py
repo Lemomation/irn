@@ -1,5 +1,6 @@
 """
-Background Mode: run the provider browser on a private, invisible display.
+Background Mode: run the provider browser hidden (a private display on Linux, concealed
+windows on Windows), with nothing a page can tell apart from the visible browser.
 
 Why it is built this way
 ------------------------
@@ -10,7 +11,7 @@ loads. That rules out two easy options:
   window metrics, pointer/hover media queries and more.
 * Xvfb renders in software, so the WebGL and canvas fingerprints change.
 
-Instead the same headed Chromium, with the same flags, runs on a private sway
+On Linux the same headed Chromium, with the same flags, runs on a private sway
 compositor (wlroots ``headless`` backend) that renders on the real GPU, and everything a
 page can observe about the desktop is mirrored from the user's session:
 

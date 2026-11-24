@@ -2541,18 +2541,11 @@ SCHEMA = [
                 type=SettingType.BOOLEAN,
                 default=False,
                 tooltip=(
-                    "Linux and Windows. Hides the provider browser while provider pages see the "
-                    "same browser as in normal mode, so your screen, mouse and keyboard stay free. "
-                    "On Linux (X11 and Wayland) the browser runs on a private, invisible, "
-                    "GPU-accelerated display that mirrors your desktop and keeps working with the "
-                    "monitor off or the lid closed; needs sway and Xwayland installed. On Windows "
-                    "the browser stays on your desktop, invisible, click-through and out of the "
-                    "taskbar (its window can appear for an instant when it starts). Not available "
-                    "on macOS. The first start on a desktop runs "
-                    "visibly once to calibrate; after that, a start only runs hidden if it matches "
-                    "that calibration, otherwise the browser opens normally. If a provider needs "
-                    "you to sign in, the browser opens visibly for that session. Restart the "
-                    "provider browser after changing this."
+                    "Hides the provider browser while pages still see your normal browser, so "
+                    "your screen, mouse and keyboard stay free. Linux (needs sway) and Windows. "
+                    "The first start runs visibly once to calibrate; if a hidden start would differ "
+                    "or a sign-in is needed, the browser opens normally. Restart the provider "
+                    "browser after changing this."
                 ),
                 docs_path=DOCS_RUNTIME_BROWSER_ENVIRONMENT,
                 docs_anchor="background-mode",

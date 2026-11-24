@@ -301,6 +301,7 @@ class Placer(threading.Thread):
         self.swaysock = swaysock
         self.workarea = workarea
         self.stop_event = threading.Event()
+        self.ready = threading.Event()  # Set once connected; the supervisor waits for it.
         self.cond = threading.Condition()
         self.passes = 0
         self.last_moves = 0
@@ -393,7 +394,10 @@ class Placer(threading.Thread):
         handle = self.x.open(self.x_display)
         ipc: Optional[SwayIPC] = None
         try:
+            if not handle:
+                raise RuntimeError("could not open the private X display")
             ipc = SwayIPC(self.swaysock)
+            self.ready.set()
             while not self.stop_event.is_set():
                 moves = self._pass(ipc, handle)
                 with self.cond:
@@ -450,6 +454,7 @@ class ClipboardOwner(threading.Thread):
         self.x_display = x_display
         self.commands: "queue.Queue[tuple[str, Any, threading.Event, dict]]" = queue.Queue()
         self.stop_event = threading.Event()
+        self.ready = threading.Event()  # Set once it owns its window; the supervisor waits for it.
         self.wake_r, self.wake_w = os.pipe()
         lib = x.lib
         lib.XPending.argtypes = [ctypes.c_void_p]
@@ -536,6 +541,7 @@ class ClipboardOwner(threading.Thread):
         max_bytes = int(lib.XExtendedMaxRequestSize(handle) or lib.XMaxRequestSize(handle)) * 4 - 4096
         fd = int(lib.XConnectionNumber(handle))
         ev = self.Event()
+        self.ready.set()
         try:
             while not self.stop_event.is_set():
                 while not self.commands.empty():
@@ -633,9 +639,12 @@ def apply_x11_mirror(x: Xlib, handle, x_display: str, snapshot: dict[str, Any]) 
         primary = next((i for i, o in enumerate(outputs, start=1) if o.get("primary")), None)
         xrandr = shutil.which("xrandr")
         if primary and xrandr:
-            subprocess.run(
+            result = subprocess.run(
                 [xrandr, "--output", f"HEADLESS-{primary}", "--primary"],
                 env={**system_env(), "DISPLAY": x_display},
                 capture_output=True,
                 timeout=10,
             )
+            if result.returncode != 0:
+                # Chromium opens new windows on the primary monitor.
+                raise RuntimeError("the primary monitor could not be set on the private display")

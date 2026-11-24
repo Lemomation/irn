@@ -18,7 +18,7 @@ import json
 import time
 from typing import Any, Optional
 
-from utils.background_mode.common import CALIBRATION_FILE, read_json, state_dir, write_json
+from utils.background_mode.common import CALIBRATION_FILE, STATE_LOCK, read_json, state_dir, write_json
 
 CALIBRATION_VERSION = 1
 MAX_DESKTOPS = 8
@@ -147,16 +147,25 @@ def _load(config_dir) -> dict[str, Any]:
     data = read_json(state_dir(config_dir) / CALIBRATION_FILE) or {}
     if data.get("version") != CALIBRATION_VERSION:
         data = {"version": CALIBRATION_VERSION, "desktops": {}, "windows": {}}
-    data.setdefault("desktops", {})
-    data.setdefault("windows", {})
+    for key in ("desktops", "windows"):
+        # A damaged file only costs a recalibration.
+        entries = data.get(key)
+        data[key] = {k: v for k, v in entries.items() if isinstance(v, dict)} if isinstance(entries, dict) else {}
     return data
+
+
+def _section(entry: dict[str, Any], key: str) -> dict[str, Any]:
+    value = entry.get(key)
+    if not isinstance(value, dict):
+        value = entry[key] = {}
+    return value
 
 
 def _save(config_dir, data: dict[str, Any]) -> None:
     for key, limit in (("desktops", MAX_DESKTOPS), ("windows", MAX_WINDOW_RECORDS)):
         entries = data.get(key) or {}
         if len(entries) > limit:
-            newest = sorted(entries.items(), key=lambda kv: kv[1].get("recorded_at", 0), reverse=True)[:limit]
+            newest = sorted(entries.items(), key=lambda kv: float(kv[1].get("recorded_at") or 0), reverse=True)[:limit]
             data[key] = dict(newest)
     write_json(state_dir(config_dir) / CALIBRATION_FILE, data)
 
@@ -164,57 +173,64 @@ def _save(config_dir, data: dict[str, Any]) -> None:
 def load_baseline(config_dir, signature: str, viewport_mode: str) -> Optional[dict[str, Any]]:
     """The visible-run probe for this desktop and viewport mode (Playwright emulates the
     screen in the fixed-viewport mode, so the two modes look different to pages)."""
-    entry = (_load(config_dir).get("desktops") or {}).get(signature) or {}
-    return (entry.get("probes") or {}).get(viewport_mode)
+    entry = _load(config_dir)["desktops"].get(signature) or {}
+    value = _section(entry, "probes").get(viewport_mode)
+    return value if isinstance(value, dict) else None
 
 
 def save_baseline(config_dir, signature: str, viewport_mode: str, probe: dict[str, Any]) -> None:
-    data = _load(config_dir)
-    entry = data["desktops"].get(signature) or {}
-    entry.setdefault("probes", {})[viewport_mode] = probe
-    entry["recorded_at"] = time.time()
-    data["desktops"][signature] = entry
-    _save(config_dir, data)
+    with STATE_LOCK:
+        data = _load(config_dir)
+        entry = data["desktops"].get(signature) or {}
+        _section(entry, "probes")[viewport_mode] = probe
+        entry["recorded_at"] = time.time()
+        data["desktops"][signature] = entry
+        _save(config_dir, data)
 
 
 def load_window_policy(config_dir, signature: str, viewport_mode: str) -> Optional[dict[str, Any]]:
     """How the desktop treated the browser window in a visible run for this viewport mode."""
-    entry = (_load(config_dir).get("desktops") or {}).get(signature) or {}
-    return (entry.get("window_policy") or {}).get(viewport_mode)
+    entry = _load(config_dir)["desktops"].get(signature) or {}
+    value = _section(entry, "window_policy").get(viewport_mode)
+    return value if isinstance(value, dict) else None
 
 
 def save_window_policy(config_dir, signature: str, viewport_mode: str, policy: dict[str, Any]) -> None:
-    data = _load(config_dir)
-    entry = data["desktops"].get(signature)
-    if entry is None:
-        return
-    entry.setdefault("window_policy", {})[viewport_mode] = policy
-    _save(config_dir, data)
+    with STATE_LOCK:
+        data = _load(config_dir)
+        entry = data["desktops"].get(signature)
+        if entry is None:
+            return
+        _section(entry, "window_policy")[viewport_mode] = policy
+        _save(config_dir, data)
 
 
 def load_fresh_window(config_dir, signature: str, viewport_mode: str) -> Optional[list]:
     """Where a never-used profile's window ends up on this desktop (Chromium's default placement)."""
-    entry = (_load(config_dir).get("desktops") or {}).get(signature) or {}
-    return (entry.get("fresh_window") or {}).get(viewport_mode)
+    entry = _load(config_dir)["desktops"].get(signature) or {}
+    value = _section(entry, "fresh_window").get(viewport_mode)
+    return value if isinstance(value, list) else None
 
 
 def save_fresh_window(config_dir, signature: str, viewport_mode: str, window: list) -> None:
-    data = _load(config_dir)
-    entry = data["desktops"].get(signature)
-    if entry is None:
-        return
-    entry.setdefault("fresh_window", {})[viewport_mode] = window
-    _save(config_dir, data)
+    with STATE_LOCK:
+        data = _load(config_dir)
+        entry = data["desktops"].get(signature)
+        if entry is None:
+            return
+        _section(entry, "fresh_window")[viewport_mode] = window
+        _save(config_dir, data)
 
 
 def load_window_record(config_dir, user_data_dir: str) -> Optional[dict[str, Any]]:
-    return (_load(config_dir).get("windows") or {}).get(profile_key(user_data_dir))
+    return _load(config_dir)["windows"].get(profile_key(user_data_dir))
 
 
 def save_window_record(config_dir, user_data_dir: str, record: dict[str, Any]) -> None:
-    data = _load(config_dir)
-    data["windows"][profile_key(user_data_dir)] = {**record, "recorded_at": time.time()}
-    _save(config_dir, data)
+    with STATE_LOCK:
+        data = _load(config_dir)
+        data["windows"][profile_key(user_data_dir)] = {**record, "recorded_at": time.time()}
+        _save(config_dir, data)
 
 
 def compare_probes(baseline: dict[str, Any], probe: dict[str, Any]) -> list[str]:

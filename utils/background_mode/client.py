@@ -34,6 +34,12 @@ from utils.logger import Logger
 
 SUPERVISOR_MODULE = "utils.background_mode.supervisor"
 
+# The supervisor's worst case: compiling the Xwayland shim once, starting sway and
+# Xwayland, and one restart with the nearest refresh mode.
+START_TIMEOUT_S = 150.0
+# Its teardown: helper threads, sway's graceful exit, then terminate.
+STOP_TIMEOUT_S = 20.0
+
 
 def _supervisor_command() -> tuple[list[str], dict[str, str], Optional[str]]:
     env = dict(os.environ)
@@ -130,7 +136,15 @@ class PrivateDisplay:
         return {"ok": False, "error": "the supervisor did not answer in time"}
 
     def alive(self) -> bool:
+        # poll() also reaps an exited supervisor, so sway's watchdog sees it gone.
         return self._proc.poll() is None and self._dead_reason is None
+
+    @property
+    def dead_reason(self) -> Optional[str]:
+        if self._dead_reason:
+            return self._dead_reason
+        code = self._proc.poll()
+        return None if code is None else f"the private display supervisor exited (code {code})"
 
     def browser_env(self) -> dict[str, str]:
         """Chromium's environment: the app's own, pointed at the private display instead of the desktop."""
@@ -183,19 +197,30 @@ class PrivateDisplay:
         return await self._request({"cmd": "settle", "timeout": float(timeout_s)}, timeout_s + 2.0)
 
     def stop(self) -> None:
-        self._send({"cmd": "stop"})
+        _stop_supervisor(self._proc)
+
+
+def _stop_supervisor(proc: subprocess.Popen) -> None:
+    """Ask the supervisor to tear down, then make sure it is gone and reaped."""
+    try:
+        assert proc.stdin is not None
+        proc.stdin.write(json.dumps({"cmd": "stop"}) + "\n")
+        proc.stdin.flush()
+    except Exception:
+        pass
+    try:
+        if proc.stdin:
+            proc.stdin.close()
+    except Exception:
+        pass
+    try:
+        proc.wait(timeout=STOP_TIMEOUT_S)
+    except Exception:
         try:
-            if self._proc.stdin:
-                self._proc.stdin.close()
+            proc.kill()
+            proc.wait(timeout=5)
         except Exception:
             pass
-        try:
-            self._proc.wait(timeout=10)
-        except Exception:
-            try:
-                self._proc.kill()
-            except Exception:
-                pass
 
 
 _shared_lock = threading.Lock()
@@ -260,15 +285,15 @@ def _start_private_display_blocking(config_dir) -> PrivateDisplay:
         proc.stdin.write(json.dumps(request) + "\n")
         proc.stdin.flush()
     except Exception as exc:
-        proc.kill()
+        _stop_supervisor(proc)
         raise BackgroundModeUnavailable(f"could not start the private display supervisor: {exc}")
 
     early_exit = f"the private display supervisor exited early (see {sdir / SUPERVISOR_LOG_FILE})."
-    deadline = time.monotonic() + 60.0
+    deadline = time.monotonic() + START_TIMEOUT_S
     while True:
         remaining = deadline - time.monotonic()
         if remaining <= 0:
-            proc.kill()
+            _stop_supervisor(proc)
             raise BackgroundModeUnavailable("the private display did not become ready in time.")
         try:
             event = events.get(timeout=min(remaining, 1.0))
@@ -277,16 +302,14 @@ def _start_private_display_blocking(config_dir) -> PrivateDisplay:
                 raise BackgroundModeUnavailable(early_exit)
             continue
         if event is None:
+            _stop_supervisor(proc)
             raise BackgroundModeUnavailable(early_exit)
         kind = event.get("event")
         if kind == "ready":
             break
         if kind == "fatal":
-            try:
-                # Let the supervisor stop the compositor and remove its runtime files.
-                proc.wait(timeout=15)
-            except Exception:
-                proc.kill()
+            # Let the supervisor stop the compositor and remove its runtime files.
+            _stop_supervisor(proc)
             raise BackgroundModeUnavailable(str(event.get("message") or "the private display failed."))
         if kind == "log":
             Logger.debug(f"Background Mode: {event.get('message')}")
@@ -310,7 +333,15 @@ async def acquire_private_display(config_dir) -> PrivateDisplay:
             return _shared_display
 
     loop = asyncio.get_running_loop()
-    display = await loop.run_in_executor(None, _start_private_display_blocking, config_dir)
+    future = loop.run_in_executor(None, _start_private_display_blocking, config_dir)
+    try:
+        display = await asyncio.shield(future)
+    except asyncio.CancelledError:
+        # Cancelled while the display was starting: stop it once it is up.
+        future.add_done_callback(
+            lambda f: f.cancelled() or f.exception() is not None or _stop_in_thread(f.result())
+        )
+        raise
 
     with _shared_lock:
         if not _atexit_registered:
@@ -325,8 +356,17 @@ async def acquire_private_display(config_dir) -> PrivateDisplay:
             _shared_refs = 1
             winner = display
     if winner is not display:
-        display.stop()
+        try:
+            await asyncio.shield(loop.run_in_executor(None, display.stop))
+        except asyncio.CancelledError:
+            # Give back the reference taken on the winner above.
+            threading.Thread(target=release_private_display, args=(winner,), daemon=True).start()
+            raise
     return winner
+
+
+def _stop_in_thread(display: PrivateDisplay) -> None:
+    threading.Thread(target=display.stop, name="irp-bg-stop", daemon=True).start()
 
 
 def release_private_display(display: Optional[PrivateDisplay]) -> None:
