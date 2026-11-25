@@ -1181,6 +1181,7 @@ class AIStudioDriver(BaseDriver):
                 level="info",
             )
 
+        self._background_login_needed("sign-in needs to be finished in the browser")
         await self._wait_until_logged_in(timeout_ms=0)
         await self._accept_terms_of_service_if_present(timeout_ms=4000)
         Logger.success("Google AI Studio: login detected.")

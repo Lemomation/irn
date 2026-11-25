@@ -775,6 +775,7 @@ class PerplexityDriver(BaseDriver):
                 "Please sign in to Perplexity in the browser window. IntenseRP will continue once the session cookie appears.",
                 level="info",
             )
+            self._background_login_needed("Auto Login is off, so sign-in has to happen in the browser")
             await self._wait_until_logged_in(timeout_ms=0)
             await self._dismiss_onboarding()
             Logger.success("Perplexity: login detected.")
@@ -793,6 +794,7 @@ class PerplexityDriver(BaseDriver):
                 "Auto Login is enabled, but no Perplexity account email is saved. Please sign in manually.",
                 level="warning",
             )
+            self._background_login_needed("Auto Login has no saved account for this provider")
             await self._wait_until_logged_in(timeout_ms=0)
             await self._dismiss_onboarding()
             self._mark_active_ece_pair_used()
@@ -821,6 +823,7 @@ class PerplexityDriver(BaseDriver):
                 "Please complete Perplexity sign-in manually in the browser window.",
                 level="warning",
             )
+            self._background_login_needed("sign-in needs to be finished in the browser")
             await self._wait_until_logged_in(timeout_ms=0)
             await self._dismiss_onboarding()
             self._mark_active_ece_pair_used()
@@ -831,6 +834,7 @@ class PerplexityDriver(BaseDriver):
             await self._wait_for_code_prompt_or_login(timeout_ms=120000)
         except TimeoutError:
             Logger.warning("Perplexity: login code was not completed within 120s. Waiting for manual completion...")
+            self._background_login_needed("sign-in needs to be finished in the browser")
             await self._wait_until_logged_in(timeout_ms=0)
 
         await self._dismiss_onboarding()
@@ -2113,10 +2117,20 @@ class PerplexityDriver(BaseDriver):
             await self.page.keyboard.press("Control+A")
             await self.page.keyboard.press("Backspace")
 
-            previous_clipboard = self._set_system_clipboard_text(text)
+            # In Background Mode on Linux the browser lives on a private display with its
+            # own clipboard: the app's (desktop) clipboard would paste nothing there. The
+            # Background Mode supervisor plays the desktop clipboard on that display
+            # instead, so the paste looks the same to the page and the user's real
+            # clipboard is never touched.
+            placed_in_background = False
+            if self._background_private_clipboard:
+                previous_clipboard = None
+                placed_in_background = await self._set_background_clipboard_text(text)
+            else:
+                previous_clipboard = self._set_system_clipboard_text(text)
             if previous_clipboard is not None:
                 restore_clipboard = True
-            else:
+            elif not placed_in_background:
                 try:
                     if self.context:
                         await self.context.grant_permissions(

@@ -2536,6 +2536,21 @@ SCHEMA = [
                 docs_anchor="resize-viewport-with-window",
             ),
             SettingField(
+                key="browser_background_mode",
+                label="Background Mode (Hidden Browser)",
+                type=SettingType.BOOLEAN,
+                default=False,
+                tooltip=(
+                    "Hides the provider browser while pages still see your normal browser, so "
+                    "your screen, mouse and keyboard stay free. Linux (needs sway) and Windows. "
+                    "The first start runs visibly once to calibrate; if a hidden start would differ "
+                    "or a sign-in is needed, the browser opens normally. Restart the provider "
+                    "browser after changing this."
+                ),
+                docs_path=DOCS_RUNTIME_BROWSER_ENVIRONMENT,
+                docs_anchor="background-mode",
+            ),
+            SettingField(
                 key="browser_proxy_url",
                 label="Browser Proxy URL",
                 type=SettingType.STRING,
@@ -3386,6 +3401,7 @@ SETTINGS_CARDS = {
             ("system_settings", "browser_locale"),
             ("system_settings", "browser_timezone"),
             ("system_settings", "browser_resize_viewport_with_window"),
+            ("system_settings", "browser_background_mode"),
             ("system_settings", "browser_proxy_url"),
         ],
     ),

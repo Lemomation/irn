@@ -854,6 +854,7 @@ class QwenLMDriver(BaseDriver):
                 level="info",
             )
             # Wait indefinitely until an active session and the chat UI are detected
+            self._background_login_needed("Auto Login is off, so sign-in has to happen in the browser")
             await self._wait_for_token_cookie()
             await self._ensure_chat_page_ready_after_login()
             Logger.success("QwenLM: login detected.")
@@ -871,6 +872,7 @@ class QwenLMDriver(BaseDriver):
                 "Auto Login is enabled, but no QwenLM accounts are saved. Please log in manually.",
                 level="warning",
             )
+            self._background_login_needed("Auto Login has no saved account for this provider")
             await self._wait_for_token_cookie()
             await self._ensure_chat_page_ready_after_login()
             Logger.success("QwenLM: login detected.")
@@ -924,6 +926,7 @@ class QwenLMDriver(BaseDriver):
             await asyncio.wait_for(self._wait_for_token_cookie(), timeout=90.0)
         except asyncio.TimeoutError:
             Logger.warning("QwenLM: login session not detected after submit. Waiting for manual completion...")
+            self._background_login_needed("sign-in needs to be finished in the browser")
             await self._wait_for_token_cookie()
 
         await self._ensure_chat_page_ready_after_login()

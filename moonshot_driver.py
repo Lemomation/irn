@@ -1420,6 +1420,7 @@ class MoonshotDriver(BaseDriver):
         opened_login_modal = await self._open_kimi_login_modal()
         if not opened_login_modal:
             Logger.warning("Moonshot: user-info login control not found. Waiting for manual login...")
+            self._background_login_needed("sign-in needs to be finished in the browser")
             await self._wait_until_logged_in(timeout_ms=0)
             return
 
@@ -1503,6 +1504,7 @@ class MoonshotDriver(BaseDriver):
                     "Waiting for manual login..."
                 )
 
+        self._background_login_needed("sign-in needs to be finished in the browser")
         if await self._find_google_auth_page() is None:
             popup = await self._click_google_login_and_get_popup()
 

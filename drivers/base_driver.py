@@ -29,6 +29,7 @@ from utils.profile_compatibility import (
     assess_profile_compatibility,
     mark_profile_auth_success,
 )
+from utils.background_mode import BackgroundModeSession
 
 
 class BaseDriver(ABC):
@@ -122,6 +123,9 @@ class BaseDriver(ABC):
         self._profile_compatibility_warning_sent = False
         self._minimized_hmm_notice_sent = False
         self._last_mouse_position: tuple[float, float] | None = None
+
+        # Background Mode (hidden browser), see utils/background_mode.
+        self._background = BackgroundModeSession(self)
 
     def _ece_select_least_used(self) -> bool:
         try:
@@ -1733,6 +1737,103 @@ class BaseDriver(ABC):
 
             raise
 
+    @property
+    def background_mode_active(self) -> bool:
+        """True while this driver's browser runs hidden on the Background Mode display."""
+        return self._background.active
+
+    def _background_login_needed(self, reason: str = "") -> None:
+        """Drivers call this right before waiting for the user to finish signing in in the browser."""
+        self._background.login_needed(reason)
+
+    @property
+    def _background_private_clipboard(self) -> bool:
+        """True when the hidden browser has its own clipboard (Background Mode on Linux)."""
+        return self._background.private_clipboard
+
+    async def _set_background_clipboard_text(self, text: str) -> bool:
+        """Set the hidden browser's clipboard (Background Mode only); False otherwise."""
+        return await self._background.set_clipboard_text(text)
+
+    async def _launch_browser_context(
+        self,
+        persistent_sessions: bool,
+        browser_context_options: dict[str, Any],
+        browser_launch_args: list[str],
+        launch_env: dict[str, str] | None,
+    ) -> None:
+        """Launch Chromium (persistent or not) and pick the first page."""
+        # Background Mode passes the private display's environment on Linux; None keeps the default.
+        env_kwargs: dict[str, Any] = {"env": launch_env} if launch_env is not None else {}
+
+        if persistent_sessions:
+            user_data_dir = self._get_persistent_profile_dir()
+            Logger.info("Launching Chromium (Persistent Sessions enabled)...")
+            Logger.debug(f"Persistent profile dir: {user_data_dir}")
+            self._capture_profile_compatibility_assessment(user_data_dir)
+
+            try:
+                import os
+
+                os.makedirs(user_data_dir, exist_ok=True)
+                self._preseed_persistent_browser_profile(user_data_dir)
+                self._background.before_profile_launch(user_data_dir)
+                self.context = await self.playwright.chromium.launch_persistent_context(
+                    user_data_dir,
+                    headless=False,
+                    args=browser_launch_args,
+                    **env_kwargs,
+                    **browser_context_options,
+                )
+                context_browser = getattr(self.context, "browser", None)
+                self.browser = context_browser() if callable(context_browser) else context_browser
+            except Exception as e:
+                Logger.error(f"Failed to launch persistent context: {e}")
+                Logger.warning("Falling back to non-persistent session...")
+                self._profile_compatibility_assessment = None
+                self.browser = await self.playwright.chromium.launch(
+                    headless=False,
+                    args=browser_launch_args,
+                    **env_kwargs,
+                )
+                self.context = await self.browser.new_context(**browser_context_options)
+        else:
+            Logger.info("Launching Chromium...")
+            self.browser = await self.playwright.chromium.launch(
+                headless=False,
+                args=browser_launch_args,
+                **env_kwargs,
+            )
+            self.context = await self.browser.new_context(**browser_context_options)
+
+        try:
+            pages = getattr(self.context, "pages", [])
+            self.page = pages[0] if pages else await self.context.new_page()
+        except Exception:
+            self.page = await self.context.new_page()
+
+    async def _close_browser_only(self) -> None:
+        """Close the browser and context but keep Playwright running (used to relaunch)."""
+        try:
+            await self.cleanup_background_tasks()
+        except Exception as e:
+            Logger.debug(f"Error cleaning up provider background tasks before relaunch: {e}")
+        context, browser = self.context, self.browser
+        self.page = None
+        self.context = None
+        self.browser = None
+        for label, closer in (
+            ("browser context", getattr(context, "close", None)),
+            ("browser", getattr(browser, "close", None)),
+        ):
+            if closer is None:
+                continue
+            try:
+                await asyncio.wait_for(closer(), timeout=10.0)
+            except Exception as e:
+                Logger.debug(f"Error closing {label} before relaunch: {e}")
+        self._background.on_browser_closed()
+
     async def start(self, status_callback: Optional[Callable[[str], None]] = None) -> None:
         """
         Starts the browser and navigates to the provider.
@@ -1772,47 +1873,22 @@ class BaseDriver(ABC):
             if browser_context_options.get("no_viewport"):
                 Logger.info("Provider browser viewport will follow browser window size.")
 
-            if persistent_sessions:
-                user_data_dir = self._get_persistent_profile_dir()
-                Logger.info("Launching Chromium (Persistent Sessions enabled)...")
-                Logger.debug(f"Persistent profile dir: {user_data_dir}")
-                self._capture_profile_compatibility_assessment(user_data_dir)
-
-                try:
-                    import os
-
-                    os.makedirs(user_data_dir, exist_ok=True)
-                    self._preseed_persistent_browser_profile(user_data_dir)
-                    self.context = await self.playwright.chromium.launch_persistent_context(
-                        user_data_dir,
-                        headless=False,
-                        args=browser_launch_args,
-                        **browser_context_options,
-                    )
-                    context_browser = getattr(self.context, "browser", None)
-                    self.browser = context_browser() if callable(context_browser) else context_browser
-                except Exception as e:
-                    Logger.error(f"Failed to launch persistent context: {e}")
-                    Logger.warning("Falling back to non-persistent session...")
-                    self._profile_compatibility_assessment = None
-                    self.browser = await self.playwright.chromium.launch(
-                        headless=False,
-                        args=browser_launch_args,
-                    )
-                    self.context = await self.browser.new_context(**browser_context_options)
-            else:
-                Logger.info("Launching Chromium...")
-                self.browser = await self.playwright.chromium.launch(
-                    headless=False,
-                    args=browser_launch_args,
-                )
-                self.context = await self.browser.new_context(**browser_context_options)
-
+            launch_env = await self._background.prepare(status_callback)
             try:
-                pages = getattr(self.context, "pages", [])
-                self.page = pages[0] if pages else await self.context.new_page()
-            except Exception:
-                self.page = await self.context.new_page()
+                await self._launch_browser_context(
+                    persistent_sessions, browser_context_options, browser_launch_args, launch_env
+                )
+                await self._background.after_launch()
+            except Exception as background_error:
+                if not self.background_mode_active:
+                    raise
+                await self._background.fall_back_to_visible(
+                    self._background.describe_failure(background_error), status_callback
+                )
+                await self._launch_browser_context(
+                    persistent_sessions, browser_context_options, browser_launch_args, None
+                )
+                await self._background.after_launch()
 
             await self.before_initial_navigation()
 
@@ -1821,7 +1897,24 @@ class BaseDriver(ABC):
             await self._navigate_to_start_url(start_url)
 
             try:
-                await self.login()
+                if self.background_mode_active and await self._background.run_login():
+                    # The provider needs the user (sign-in, CAPTCHA, 2FA): reopen the same
+                    # profile in a visible window for this session.
+                    await self._background.fall_back_to_visible(
+                        self._background.login_reason or "the provider needs you to sign in",
+                        status_callback,
+                        for_login=True,
+                    )
+                    await self._launch_browser_context(
+                        persistent_sessions, browser_context_options, browser_launch_args, None
+                    )
+                    await self._background.after_launch()
+                    await self.before_initial_navigation()
+                    Logger.info(f"Navigating to {start_url} ...")
+                    await self._navigate_to_start_url(start_url)
+                    await self.login()
+                elif not self.background_mode_active:
+                    await self.login()
             except Exception as login_error:
                 self._warn_profile_compatibility_after_auth_failure(login_error)
                 raise
@@ -2015,6 +2108,11 @@ class BaseDriver(ABC):
         except Exception as e:
             Logger.debug(f"Error closing provider HTTP client: {e}")
 
+        try:
+            await self._background.before_close()
+        except Exception as e:
+            Logger.debug(f"Error recording Background Mode window state: {e}")
+
         if self.context:
             try:
                 await _await_with_timeout(self.context.close(), 10.0, "closing browser context")
@@ -2030,6 +2128,12 @@ class BaseDriver(ABC):
                 await _await_with_timeout(self.playwright.stop(), 10.0, "stopping Playwright")
             except Exception as e:
                 Logger.debug(f"Error stopping Playwright: {e}")
+
+        # Only after Chromium is gone (on Linux the private display is shared between providers).
+        try:
+            await self._background.on_close()
+        except Exception as e:
+            Logger.debug(f"Error closing Background Mode: {e}")
 
         self.page = None
         self.context = None
@@ -2070,7 +2174,30 @@ class BaseDriver(ABC):
 
             await asyncio.sleep(2.0)
 
-    async def _handle_crash(self) -> None:
+    async def _stop_failed_background_browser(self, reason: str) -> None:
+        """A hidden browser whose private display or window concealer failed must not keep running."""
+        Logger.warning(
+            f"{self.provider_label}: Background Mode stopped working ({reason}). Closing the hidden browser."
+        )
+        self.notify_user(
+            f"{self.provider_label}: Background Mode Stopped",
+            "The hidden browser was closed. Click Start to relaunch the driver.",
+            level="warning",
+            dialog_message=(
+                f"Background Mode stopped working: {reason}.\n\n"
+                "The hidden browser was closed so it cannot keep running differently from your normal "
+                "browser. Click Start to relaunch the driver."
+            ),
+        )
+        try:
+            await self._close_browser_only()
+            await self._background.on_close()
+        except Exception as e:
+            Logger.debug(f"Error closing the hidden browser: {e}")
+        # (During startup the start itself fails next; afterwards this is a crash.)
+        await self._handle_crash(notify=False)
+
+    async def _handle_crash(self, *, notify: bool = True) -> None:
         """
         Handles the crash event.
         """
@@ -2081,7 +2208,7 @@ class BaseDriver(ABC):
         self.is_running = False
         self.monitoring_active = False
 
-        if self._notify_on_driver_crash_enabled():
+        if notify and self._notify_on_driver_crash_enabled():
             self.notify_user(
                 f"{self.provider_label} Driver",
                 "Browser was closed or crashed. Click Start to relaunch the driver.",
