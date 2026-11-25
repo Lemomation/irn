@@ -559,8 +559,9 @@ SCHEMA = [
                 key="model",
                 label="Model",
                 type=SettingType.DROPDOWN,
-                default="GLM-5.3",
+                default="GLM-5.3-Flash",
                 options=[
+                    "GLM-5.4",
                     "GLM-5.3-Flash",
                     "GLM-5.3",
                     "GLM-5.2",
@@ -570,6 +571,7 @@ SCHEMA = [
                     "GLM-4.7",
                 ],
                 deprecated_options=[
+                    "GLM-5.2",
                     "GLM-5.1",
                     "GLM-5-Turbo",
                     "GLM-5V-Turbo",
@@ -595,9 +597,10 @@ SCHEMA = [
                 type=SettingType.DROPDOWN,
                 default="Max",
                 options=["Low", "High", "Max"],
-                tooltip="Select the Thinking Level for GLM-5.2 / GLM-5.3 / GLM-5.3-Flash.",
+                tooltip="Select the Thinking Level for GLM-5.4 / GLM-5.3 / GLM-5.3-Flash / GLM-5.2.",
                 visible_depends=(
-                    "glm_behavior.model==GLM-5.3-Flash"
+                    "glm_behavior.model==GLM-5.4"
+                    "||glm_behavior.model==GLM-5.3-Flash"
                     "||glm_behavior.model==GLM-5.3"
                     "||glm_behavior.model==GLM-5.2"
                 ),

@@ -59,7 +59,7 @@ class GLMDriver(BaseDriver):
     COMPLETION_URL_PATHS = {"/api/chat/completions", "/api/v2/chat/completions"}
     MODEL_CONCURRENCY_LIMIT_CODE = "MODEL_CONCURRENCY_LIMIT"
     DEEPTHINK_EFFORT_MODEL_FRIENDLIES: frozenset[str] = frozenset(
-        {"GLM-5.2", "GLM-5.3", "GLM-5.3-Flash"}
+        {"GLM-5.4", "GLM-5.2", "GLM-5.3", "GLM-5.3-Flash"}
     )
     TOOLS_SUPPORTED_MODEL_FRIENDLY = "GLM-5V-Turbo"
     DEFAULT_GLM_52_DEEPTHINK_EFFORT = "max"
@@ -129,6 +129,7 @@ class GLMDriver(BaseDriver):
     MODEL_DROPDOWN_SELECTOR = f"div#{MODEL_DROPDOWN_ID}"
     MODEL_OPTION_SELECTOR = "button[aria-label='model-item'][data-value], div[role='menu'] button[data-value]"
     MODEL_DATA_VALUE_BY_FRIENDLY: Dict[str, str] = {
+        "GLM-5.4": "glm-5.4",
         "GLM-5.3-Flash": "x-preview-l",
         "GLM-5.3": "glm-5.3",
         "GLM-5.2": "glm-5.2",
@@ -518,15 +519,19 @@ class GLMDriver(BaseDriver):
 
                     let clicked = 0;
 
-                    // A. Check for "A fresh new interface" or walkthrough/onboarding modals
+                    // A. Check for "A fresh new interface" or launch/walkthrough/onboarding modals
                     const bodyText = (document.body ? document.body.innerText : '') || '';
                     const hasWalkthrough = bodyText.includes('A fresh new interface') ||
                                            bodyText.includes('fresh new interface') ||
-                                           bodyText.includes('Everyday capabilities now live in one place');
+                                           bodyText.includes('Everyday capabilities now live in one place') ||
+                                           bodyText.includes('GLM-5.4 Launches') ||
+                                           bodyText.includes('Loop Transformer') ||
+                                           bodyText.includes('Plugins: your work tools');
 
                     // B. Identify all dialog/modal containers
                     const dialogContainers = Array.from(document.querySelectorAll(
-                        'div[role="dialog"], div[data-dialog-content], div[data-state="open"], ' +
+                        'div[role="dialog"], div[data-dialog-content], div[data-slot="dialog-content"], ' +
+                        '[data-slot="dialog-overlay"], div[data-state="open"], ' +
                         'div._modal-overlay, div[class*="modal-overlay"], div[class*="Modal"], ' +
                         'div[class*="Dialog"], div.fixed.inset-0'
                     )).filter(isVisible);
@@ -541,6 +546,7 @@ class GLMDriver(BaseDriver):
 
                             const btnRect = button.getBoundingClientRect();
                             const ariaLabel = (button.getAttribute('aria-label') || '').toLowerCase();
+                            const dataSlot = (button.getAttribute('data-slot') || '').toLowerCase();
                             const btnText = (button.textContent || '').trim().toLowerCase();
                             const hasSvg = !!button.querySelector('svg');
                             const className = (button.className || '').toString().toLowerCase();
@@ -551,7 +557,7 @@ class GLMDriver(BaseDriver):
 
                             const isCloseAria = ariaLabel.includes('close') || ariaLabel.includes('dismiss');
                             const isCloseClass = className.includes('close') || className.includes('dismiss');
-                            const isDataDialogClose = button.hasAttribute('data-dialog-close');
+                            const isDataDialogClose = button.hasAttribute('data-dialog-close') || dataSlot === 'close-button';
                             const isSrOnlyClose = Array.from(button.querySelectorAll('.sr-only, span')).some(s => {
                                 const t = (s.textContent || '').trim().toLowerCase();
                                 return t === 'close' || t === 'dismiss';
@@ -567,8 +573,8 @@ class GLMDriver(BaseDriver):
                         }
                     }
 
-                    // C. Fallback: buttons with data-dialog-close anywhere
-                    for (const button of document.querySelectorAll('button[data-dialog-close]')) {
+                    // C. Fallback: explicit dialog close buttons anywhere
+                    for (const button of document.querySelectorAll('button[data-dialog-close], button[data-slot="close-button"]')) {
                         if (button.disabled || !isVisible(button)) continue;
                         try {
                             button.click();
@@ -649,7 +655,8 @@ class GLMDriver(BaseDriver):
                         );
                     };
                     const dialogs = document.querySelectorAll(
-                        '[role="dialog"], [data-dialog-overlay], div[data-state="open"]'
+                        '[role="dialog"], [data-dialog-overlay], [data-slot="dialog-overlay"], ' +
+                        '[data-slot="dialog-content"], div[data-state="open"]'
                     );
                     return Array.from(dialogs).some(isVisible);
                 }"""
@@ -946,6 +953,8 @@ class GLMDriver(BaseDriver):
                 "() => {"
                 "  const btn = document.querySelector('button.modelSelectorButton');"
                 "  if (!btn) return '';"
+                "  const nameSpan = btn.querySelector('span.min-w-0');"
+                "  if (nameSpan && nameSpan.textContent) return nameSpan.textContent.trim();"
                 "  const div = btn.querySelector('div');"
                 "  if (!div) return '';"
                 "  const node = div.childNodes && div.childNodes[0];"
@@ -1321,8 +1330,10 @@ class GLMDriver(BaseDriver):
             "button:has-text('Sign in'), a:has-text('Sign in'), [role='button']:has-text('Sign in')"
         )
         combined_selector = (
-            f"{shell_selector}, button[data-dialog-close], div[role='dialog'], "
-            "div[data-state='open'], button:has-text('Maybe Later'), button:has-text('Next')"
+            f"{shell_selector}, button[data-dialog-close], button[data-slot='close-button'], "
+            "div[role='dialog'], div[data-slot='dialog-content'], [data-slot='dialog-overlay'], "
+            "div[data-state='open'], button:has-text('Maybe Later'), button:has-text('Next'), "
+            "button:has-text('Get started')"
         )
         deadline = None if timeout_ms is None else time.time() + max(0.0, int(timeout_ms) / 1000.0)
 
@@ -1466,7 +1477,7 @@ class GLMDriver(BaseDriver):
     def _resolve_deepthink_flags(self, model: str) -> tuple[bool, bool]:
         """Resolve Deep Think / Thinking from the user's configured GLM settings.
 
-        GLM-5.2, GLM-5.3, and GLM-5.3-Flash always have reasoning/thinking mode
+        GLM-5.2, GLM-5.3, GLM-5.3-Flash, and GLM-5.4 always have reasoning/thinking mode
         built-in on the GLM interface.
         """
         resolved_label = self._normalize_model_label(model or self.current_model or self._get_configured_glm_model_friendly())
@@ -2607,7 +2618,7 @@ class GLMDriver(BaseDriver):
     ) -> bool:
         """
         Adjust the Thinking Effort slider inside GLM's model selector dropdown.
-        Supports 3 levels (Low, High, Max) for GLM-5.3 / GLM-5.3-Flash,
+        Supports 3 levels (Low, High, Max) for GLM-5.4 / GLM-5.3 / GLM-5.3-Flash,
         and 2 levels (High, Max) for GLM-5.2.
         """
         if not self.page:

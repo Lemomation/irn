@@ -503,6 +503,8 @@ def _resolve_qwen_deprecated_model_alias(normalized: str) -> str | None:
 
 
 GLM_DEPRECATED_MODEL_ALIASES: Dict[str, str] = {
+    "5-2": "GLM-5.3",
+    "5.2": "GLM-5.3",
     "5-1": "GLM-5.3",
     "5.1": "GLM-5.3",
     "5-turbo": "GLM-5.3-Flash",
