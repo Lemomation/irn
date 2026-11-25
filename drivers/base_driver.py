@@ -1616,10 +1616,11 @@ class BaseDriver(ABC):
             return
 
         async def stop() -> None:
-            # Right after Send the site may not show its Stop button yet, so a cancel in the
-            # first seconds retries a little; later the button is there or the reply is over.
+            # Right after Send the site may not show its Stop button yet (AI Studio can take
+            # ~10 s with a long prompt), so a cancel soon after Send keeps trying; later the
+            # button is there or the reply is over.
             sent_at = self._request_sent_at
-            deadline = (sent_at + 6.0) if sent_at is not None else loop.time()
+            deadline = (sent_at + 15.0) if sent_at is not None else loop.time()
             while True:
                 try:
                     if await self._stop_generation_on_site():
@@ -1634,7 +1635,7 @@ class BaseDriver(ABC):
 
         self._site_stop_task = loop.create_task(stop())
 
-    async def settle_after_request(self, timeout_s: float = 12.0) -> None:
+    async def settle_after_request(self, timeout_s: float = 20.0) -> None:
         """Let a pending site Stop finish before the next request can start (it must not hit that one)."""
         # (_abort_ui_task: the Stop/new-chat actions some drivers schedule themselves.)
         for task in (self._site_stop_task, getattr(self, "_abort_ui_task", None)):
@@ -1656,12 +1657,13 @@ class BaseDriver(ABC):
             if cache is not None and key:
                 cache.clear_cache(key)
 
-    async def reset_after_cancelled_request(self) -> None:
+    async def reset_after_cancelled_request(self, *, sent: bool = False) -> None:
         """
-        A request was cancelled after a file was attached: reload the provider's start page
+        After a cancelled request (and the site's Stop, if it was sent). By default: if it
+        was cancelled before sending with a file attached, reload the provider's start page
         so the attachment cannot ride along with the next request.
         """
-        if not self._request_uploaded or self.page is None:
+        if sent or not self._request_uploaded or self.page is None:
             return
         Logger.info(f"{self.provider_label}: reloading the page so the cancelled upload is not reused.")
         try:

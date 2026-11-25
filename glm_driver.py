@@ -3309,8 +3309,8 @@ class GLMDriver(BaseDriver):
             except Exception:
                 pass
 
-        self._mark_request_sending()
         for attempt in range(max_retries):
+            self._mark_request_sending()  # Before each try: a cancel meanwhile stops it.
             clicked = await self._click_glm_control(
                 send_button.first,
                 label="send button",

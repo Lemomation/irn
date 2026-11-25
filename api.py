@@ -2322,20 +2322,20 @@ class API:
                     await settle()  # A site Stop must not hit the next request.
             except (Exception, RequestCancelled):
                 pass
-            if begun and abort_event.is_set() and not sent:
-                # Cancelled while being prepared: the next request must not build on it.
-                try:
-                    forget = getattr(driver, "forget_request_context", None)
-                    if callable(forget):
-                        forget()
-                    reset = getattr(driver, "reset_after_cancelled_request", None)
-                    if callable(reset):
-                        await reset()
-                except (Exception, RequestCancelled) as e:
-                    Logger.debug(f"{slot.label}: could not reset after the cancelled request: {e}")
             end_request = getattr(driver, "end_request", None)
             if callable(end_request):
                 end_request()
+            if begun and abort_event.is_set():
+                # The next request must not build on the cancelled one.
+                try:
+                    forget = getattr(driver, "forget_request_context", None)
+                    if callable(forget) and not sent:
+                        forget()
+                    reset = getattr(driver, "reset_after_cancelled_request", None)
+                    if callable(reset):
+                        await reset(sent=sent)
+                except (Exception, RequestCancelled) as e:
+                    Logger.debug(f"{slot.label}: could not reset after the cancelled request: {e}")
             self.current_entries_by_slot_id.pop(slot_id, None)
             self.current_abort_events_by_slot_id.pop(slot_id, None)
             self._sync_current_entry_aliases()

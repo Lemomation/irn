@@ -547,6 +547,7 @@ class AIStudioDriver(BaseDriver):
         self._safety_filters_initialized = False
         self._system_instructions_storage_reset_done = False
         self._preflight_task: Optional[asyncio.Task] = None
+        self._preflight_after_cancel: tuple[Dict[str, Any], str] | None = None
         self._preflight_ready = False
         self._preflight_state: Optional[Dict[str, Any]] = None
         self._preflight_system_prompt_text = ""
@@ -4347,6 +4348,15 @@ class AIStudioDriver(BaseDriver):
         super().forget_request_context()
         self._clear_preflight_chat_state()  # A cancelled request may have used it half-way.
 
+    async def reset_after_cancelled_request(self, *, sent: bool = False) -> None:
+        # Prepare the next chat as after a normal reply: it also leaves the cancelled one.
+        pending, self._preflight_after_cancel = self._preflight_after_cancel, None
+        if pending is not None and self._preflight_next_chat_enabled():
+            self._clear_preflight_chat_state()
+            self._schedule_preflight_next_chat(*pending)
+            return
+        await super().reset_after_cancelled_request(sent=sent)
+
     async def _click_stop_generation(self) -> bool:
         """Best-effort click AI Studio's Stop button for the active response."""
         button = await self._find_stop_generation_button(timeout_ms=1200)
@@ -4434,7 +4444,6 @@ class AIStudioDriver(BaseDriver):
         last_error: Exception | None = None
         previous_composer_text = await self._read_prompt_composer_text(timeout_ms=0)
         previous_prompt_had_media = await self._prompt_has_attached_media(timeout_ms=0)
-        self._mark_request_sending()
         for attempt in range(1, self.SEND_CLICK_MAX_ATTEMPTS + 1):
             if completion_started is not None and completion_started.is_set():
                 return
@@ -4470,12 +4479,15 @@ class AIStudioDriver(BaseDriver):
             clicked = True
             try:
                 await self._refocus_composer_before_send()
+                # Counts as sent from here (a cancel until now stops before the click).
+                self._mark_request_sending()
                 await self._click_locator(button, timeout=3000)
                 await self._ui_settle_pause(0.25)
             except Exception as e:
                 last_error = e
                 try:
                     await self._refocus_composer_before_send()
+                    self._mark_request_sending()
                     await self._click_locator(button, timeout=3000, force=True)
                     await self._ui_settle_pause(0.25)
                 except Exception as force_error:
@@ -4498,6 +4510,7 @@ class AIStudioDriver(BaseDriver):
             # Banners or promos can sit on top of the Run button, so fall back to the keyboard
             # shortcut, which only needs composer focus. We only get here while the prompt is
             # still pending, so this does not double-submit.
+            self._mark_request_sending()
             if await self._submit_prompt_via_keyboard() and await self._wait_for_send_click_observed(
                 previous_composer_text=previous_composer_text,
                 previous_prompt_had_media=previous_prompt_had_media,
@@ -5482,6 +5495,7 @@ class AIStudioDriver(BaseDriver):
         completion_claim_lock = asyncio.Lock()
         completion_claimed = False
         preflight_next_chat = self._preflight_next_chat_enabled()
+        self._preflight_after_cancel = None
         preflight_settings_for_next_chat: Dict[str, Any] | None = None
         preflight_system_prompt_for_next_chat = ""
         current_attempt_meta: Dict[str, Any] = {
@@ -6546,6 +6560,12 @@ class AIStudioDriver(BaseDriver):
                 preflight_next_chat = False
             if not preflight_next_chat:
                 self._clear_preflight_chat_state()
+            if preflight_next_chat:
+                # Used if this request gets cancelled: the next chat is still prepared.
+                self._preflight_after_cancel = (
+                    _build_caars_savior_settings() if caars_enabled else dict(effective_settings),
+                    str(system_prompt_text or ""),
+                )
 
             clean_regeneration = clean_regeneration_requested and not caars_enabled
             clean_regen_state = self._build_clean_regeneration_state(
