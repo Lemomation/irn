@@ -32,6 +32,19 @@ from utils.profile_compatibility import (
 from utils.background_mode import BackgroundModeSession
 
 
+class RequestCancelled(BaseException):
+    """
+    The client cancelled the request before it was sent to the provider.
+
+    A BaseException on purpose: the drivers' many ``except Exception`` fallbacks must not
+    swallow it and carry on preparing a message nobody wants any more.
+    """
+
+
+# Request phases, see BaseDriver.begin_request().
+REQUEST_IDLE, REQUEST_PREPARING, REQUEST_SENT = "idle", "preparing", "sent"
+
+
 class BaseDriver(ABC):
     _browser_install_verified: bool = False
     _browser_install_lock: asyncio.Lock | None = None
@@ -101,6 +114,12 @@ class BaseDriver(ABC):
         # Abort handling (provider-specific use; common surface)
         self.current_abort_event: asyncio.Event | None = None
         self.abort_requested = False
+        # Client cancellation of the request in flight (see begin_request()).
+        self._request_abort_event: asyncio.Event | None = None
+        self._request_phase = REQUEST_IDLE
+        self._request_uploaded = False
+        self._request_sent_at: float | None = None
+        self._site_stop_task: asyncio.Task | None = None
         self._send_control_signature: str | None = None
 
         # Provider UI language detection shared by browser drivers.
@@ -853,6 +872,7 @@ class BaseDriver(ABC):
             return False
 
     async def _human_delay(self, delay_s: float = 0.8) -> None:
+        self._raise_if_request_cancelled()
         delay = max(0.0, float(delay_s))
         if self._humanize_mouse_movements_enabled() and delay > 0.0:
             delay = (delay * random.uniform(0.85, 1.25)) + random.uniform(0.03, 0.16)
@@ -929,6 +949,7 @@ class BaseDriver(ABC):
         max_s: float = 0.14,
     ) -> None:
         """Add a tiny optional pause around UI actions when paced interactions are enabled."""
+        self._raise_if_request_cancelled()
         if not self._humanize_mouse_movements_enabled():
             return
 
@@ -1023,6 +1044,7 @@ class BaseDriver(ABC):
         no_wait_after: bool | None = None,
     ) -> None:
         """Click a locator, optionally adding native Playwright pointer movement and pacing."""
+        self._raise_if_request_cancelled()
         kwargs: dict[str, Any] = {"timeout": timeout}
         if force is not None:
             kwargs["force"] = force
@@ -1064,6 +1086,7 @@ class BaseDriver(ABC):
             await self._humanized_action_pause(0.06, 0.20)
 
     async def _move_mouse_to_point(self, x: float, y: float) -> None:
+        self._raise_if_request_cancelled()
         if not self.page:
             return
 
@@ -1099,6 +1122,7 @@ class BaseDriver(ABC):
         self._last_mouse_position = (x, y)
 
     async def _click_mouse_point(self, x: float, y: float) -> None:
+        self._raise_if_request_cancelled()
         if not self.page:
             return
 
@@ -1502,16 +1526,148 @@ class BaseDriver(ABC):
         """
         Best-effort, non-blocking request to abort the current generation.
 
-        Providers may additionally click a "Stop" button or cancel streams; this method
-        is intentionally lightweight for use from disconnect/cancellation paths.
+        Before the message was sent, preparation stops at its next step (see
+        begin_request()). Once it was sent, the provider's own Stop is pressed so the site
+        stops generating; this method is intentionally lightweight for use from
+        disconnect/cancellation paths.
         """
         self.abort_requested = True
-        abort_event = getattr(self, "current_abort_event", None)
-        if abort_event:
+        for abort_event in (getattr(self, "current_abort_event", None), self._request_abort_event):
+            if abort_event:
+                try:
+                    abort_event.set()
+                except Exception:
+                    pass
+        if self._request_phase == REQUEST_SENT:
+            self._schedule_site_stop()
+
+    # -- client cancellation -------------------------------------------------------
+
+    def begin_request(self, abort_event: asyncio.Event | None) -> None:
+        """
+        A request starts: until it is sent to the provider, a client cancellation stops it
+        at the next UI step (shared click, pointer and pause helpers, and each driver's
+        send method) by raising RequestCancelled.
+        """
+        self._request_abort_event = abort_event
+        self._request_phase = REQUEST_PREPARING
+        self._request_uploaded = False
+        self._request_sent_at = None
+        self._site_stop_task = None
+
+    def end_request(self) -> None:
+        self._request_abort_event = None
+        self._request_phase = REQUEST_IDLE
+
+    def request_cancelled(self) -> bool:
+        event = self._request_abort_event
+        return bool(event is not None and event.is_set())
+
+    def request_was_sent(self) -> bool:
+        return self._request_phase == REQUEST_SENT
+
+    def _raise_if_request_cancelled(self) -> None:
+        """
+        Stop preparing a request the client cancelled. Only before the first Send: the shared
+        helpers that call this also serve the Stop click and reading the reply.
+        """
+        if self._request_phase == REQUEST_PREPARING and self.request_cancelled():
+            raise RequestCancelled()
+
+    def _check_before_new_input(self, *, upload: bool = False) -> None:
+        """
+        Drivers call this before typing a prompt or uploading a file. Raises RequestCancelled
+        once the request is cancelled, even after an earlier Send (a fallback or follow-up
+        message must not go out either).
+        """
+        if self._request_phase != REQUEST_IDLE and self.request_cancelled():
+            raise RequestCancelled()
+        if upload:
+            self._request_uploaded = True
+
+    def _mark_request_sending(self) -> None:
+        """
+        Drivers call this right before pressing Send (or Regenerate). Raises RequestCancelled
+        once the request is cancelled, so nothing is sent after that; from here on the
+        request counts as sent, and a cancellation presses the site's Stop instead.
+        """
+        if self._request_phase != REQUEST_IDLE and self.request_cancelled():
+            raise RequestCancelled()
+        if self._request_phase == REQUEST_PREPARING:
+            self._request_phase = REQUEST_SENT
+        try:
+            self._request_sent_at = asyncio.get_running_loop().time()
+        except RuntimeError:
+            self._request_sent_at = None
+
+    async def _stop_generation_on_site(self) -> bool:
+        """Press the provider's own Stop button. Drivers override; True if it was pressed."""
+        return False
+
+    def _schedule_site_stop(self) -> None:
+        """Press the site's Stop once per request, in the background."""
+        if self._site_stop_task is not None:
+            return
+        if type(self)._stop_generation_on_site is BaseDriver._stop_generation_on_site:
+            return  # This driver presses Stop itself (or has none).
+        try:
+            loop = asyncio.get_running_loop()
+        except RuntimeError:
+            return
+
+        async def stop() -> None:
+            # Right after Send the site may not show its Stop button yet, so a cancel in the
+            # first seconds retries a little; later the button is there or the reply is over.
+            sent_at = self._request_sent_at
+            deadline = (sent_at + 6.0) if sent_at is not None else loop.time()
+            while True:
+                try:
+                    if await self._stop_generation_on_site():
+                        Logger.info(f"{self.provider_label}: stopped the generation on the site.")
+                        return
+                except Exception as e:
+                    Logger.debug(f"{self.provider_label}: could not press the site's Stop button: {e}")
+                if loop.time() >= deadline:
+                    Logger.debug(f"{self.provider_label}: no Stop button to press (the reply had already ended).")
+                    return
+                await asyncio.sleep(0.5)
+
+        self._site_stop_task = loop.create_task(stop())
+
+    async def settle_after_request(self, timeout_s: float = 12.0) -> None:
+        """Let a pending site Stop finish before the next request can start (it must not hit that one)."""
+        # (_abort_ui_task: the Stop/new-chat actions some drivers schedule themselves.)
+        for task in (self._site_stop_task, getattr(self, "_abort_ui_task", None)):
+            if task is None or task.done():
+                continue
             try:
-                abort_event.set()
-            except Exception:
-                pass
+                await asyncio.wait_for(asyncio.shield(task), timeout=timeout_s)
+            except (Exception, RequestCancelled):
+                task.cancel()
+
+    def forget_request_context(self) -> None:
+        """
+        A request was cancelled while it was being prepared: forget anything that would make
+        the next one build on it (the clean-regeneration cache; drivers add their own state).
+        """
+        cache = getattr(self, "cache_manager", None)
+        for key_attr in ("clean_regen_message_cache_key", "clean_regen_state_cache_key"):
+            key = getattr(self, key_attr, None)
+            if cache is not None and key:
+                cache.clear_cache(key)
+
+    async def reset_after_cancelled_request(self) -> None:
+        """
+        A request was cancelled after a file was attached: reload the provider's start page
+        so the attachment cannot ride along with the next request.
+        """
+        if not self._request_uploaded or self.page is None:
+            return
+        Logger.info(f"{self.provider_label}: reloading the page so the cancelled upload is not reused.")
+        try:
+            await self.page.goto(self.get_start_url(), wait_until="domcontentloaded", timeout=45000)
+        except Exception as e:
+            Logger.debug(f"{self.provider_label}: could not reload after the cancelled upload: {e}")
 
     async def _iterate_response_queue(
         self,

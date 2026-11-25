@@ -393,6 +393,8 @@ class PerplexityDriver(BaseDriver):
 
     def request_abort(self) -> None:
         super().request_abort()
+        if not self.request_was_sent():
+            return  # Nothing reached the site yet; preparation stops on its own.
         try:
             loop = asyncio.get_running_loop()
         except RuntimeError:
@@ -1396,6 +1398,7 @@ class PerplexityDriver(BaseDriver):
         return None
 
     async def click_new_chat(self, source: str = "auto") -> None:
+        self._raise_if_request_cancelled()
         _ = source
         if not self.page:
             return
@@ -2030,6 +2033,7 @@ class PerplexityDriver(BaseDriver):
             pass
 
     async def _upload_file(self, file_spec: Any) -> bool:
+        self._check_before_new_input(upload=True)
         if not self.page:
             return False
 
@@ -2080,6 +2084,7 @@ class PerplexityDriver(BaseDriver):
         return True
 
     async def enter_message(self, message: str) -> None:
+        self._check_before_new_input()
         if not self.page:
             return
 
@@ -2234,6 +2239,7 @@ class PerplexityDriver(BaseDriver):
         last_error: Exception | None = None
 
         while True:
+            self._raise_if_request_cancelled()
             button = self.page.locator(self.SUBMIT_BUTTON_SELECTOR)
             try:
                 if await button.count() > 0 and await button.first.is_visible():
@@ -2245,6 +2251,7 @@ class PerplexityDriver(BaseDriver):
                             last_error = RuntimeError("Could not confirm Perplexity request mode is Search.")
                             break
                         await self._remember_send_control_signature(button.first)
+                        self._mark_request_sending()
                         await button.first.click(timeout=3000)
                         return
                     last_error = RuntimeError("Submit button is disabled.")

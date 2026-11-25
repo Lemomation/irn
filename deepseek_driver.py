@@ -1568,6 +1568,9 @@ class DeepSeekDriver(BaseDriver):
         lowered = signature.lower()
         return any(token in lowered for token in ("stop", "cancel", "abort", "pause", "square"))
 
+    async def _stop_generation_on_site(self) -> bool:
+        return bool(await self._click_stop_button())
+
     async def _click_stop_button(self):
         """
         Clicks the Stop button in DeepSeek UI to cancel the ongoing generation.
@@ -2151,6 +2154,7 @@ class DeepSeekDriver(BaseDriver):
         and expanded sidebar (pill button with text 'New chat').
         Verifies reset via URL and falls back to home navigation if needed.
         """
+        self._raise_if_request_cancelled()
         if not self.page:
             return
 
@@ -2326,6 +2330,7 @@ class DeepSeekDriver(BaseDriver):
         """
         Enters the message into the chat input textarea.
         """
+        self._check_before_new_input()
         # The textarea has placeholder "Message DeepSeek"
         textarea = self.page.locator("textarea[placeholder='Message DeepSeek']")
         if await textarea.count() == 0:
@@ -2354,12 +2359,14 @@ class DeepSeekDriver(BaseDriver):
                 Logger.debug(f"Waiting up to {timeout} seconds for send button to be enabled...")
                 start_time = time.time()
                 while time.time() - start_time < timeout:
+                    self._raise_if_request_cancelled()
                     if not await self._is_deepseek_control_disabled(send_button):
                         break
                     await asyncio.sleep(0.5)
             
             if not await self._is_deepseek_control_disabled(send_button):
                 Logger.debug("Clicking send button...")
+                self._mark_request_sending()
                 await self._click_locator(send_button, timeout=3000)
             else:
                 Logger.warning("Send button is disabled. Cannot send message.")
@@ -2423,6 +2430,7 @@ class DeepSeekDriver(BaseDriver):
                         return False
 
                     Logger.debug("Clicking regenerate button...")
+                    self._mark_request_sending()
                     await self._click_locator(regen_button, timeout=3000)
                     return True
 
@@ -2464,6 +2472,7 @@ class DeepSeekDriver(BaseDriver):
                 return False
 
             Logger.debug("Clicking regenerate button from DeepSeek action bar...")
+            self._mark_request_sending()
             await self._click_locator(regen_button, timeout=3000)
             return True
 
@@ -2485,6 +2494,7 @@ class DeepSeekDriver(BaseDriver):
         Returns True when the file payload was attached, or False when upload is unavailable
         and the caller should use the regular text path.
         """
+        self._check_before_new_input(upload=True)
         try:
             if isinstance(file_spec, dict):
                 name = file_spec.get("name", "<payload>")

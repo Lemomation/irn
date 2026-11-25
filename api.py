@@ -8,10 +8,11 @@ from collections import deque
 from dataclasses import dataclass
 from fastapi import FastAPI, HTTPException, Request, Response
 from fastapi.responses import StreamingResponse
+from starlette.datastructures import MutableHeaders
 from pydantic import BaseModel
 from typing import List, Optional, Dict, Any, Callable, Literal, Union
 
-from drivers.base_driver import BaseDriver
+from drivers.base_driver import BaseDriver, RequestCancelled
 from drivers.parallel_manager import ParallelDriversManager
 from drivers.providers import DriverProvider, is_provider_locked, provider_lock_reason
 from drivers.shared_utils import format_request_messages
@@ -47,6 +48,8 @@ _TERMINAL_PARTIAL_ERROR_RE = re.compile(
 )
 
 DEFAULT_MAX_REQUEST_QUEUE_SIZE = 128
+# Returned instead of a chunk when a non-streaming client hung up.
+_CLIENT_GONE = object()
 API_CORS_PATH_PREFIX = "/v1/"
 API_CORS_ALLOWED_METHODS = ("GET", "POST", "OPTIONS")
 API_CORS_ALLOW_METHODS_HEADER = ", ".join(API_CORS_ALLOWED_METHODS)
@@ -236,6 +239,46 @@ def _build_api_cors_headers(raw_request: Request, *, preflight: bool = False) ->
         }
     )
     return headers
+
+class _ApiCorsMiddleware:
+    """CORS for the OpenAI-compatible API paths (/v1/...), as plain ASGI."""
+
+    def __init__(self, app):
+        self.app = app
+
+    async def __call__(self, scope, receive, send):
+        if scope.get("type") != "http":
+            await self.app(scope, receive, send)
+            return
+
+        raw_request = Request(scope)
+        if not _is_api_cors_path(raw_request.url.path) or not raw_request.headers.get("origin"):
+            await self.app(scope, receive, send)
+            return
+
+        is_preflight = (
+            raw_request.method.upper() == "OPTIONS"
+            and raw_request.headers.get("access-control-request-method")
+        )
+        if is_preflight:
+            requested_method = str(raw_request.headers.get("access-control-request-method") or "").upper()
+            headers = _build_api_cors_headers(raw_request, preflight=True)
+            if requested_method not in API_CORS_ALLOWED_METHODS:
+                response = Response("Disallowed CORS method", status_code=400, media_type="text/plain", headers=headers)
+            else:
+                response = Response("OK", status_code=200, media_type="text/plain", headers=headers)
+            await response(scope, receive, send)
+            return
+
+        cors_headers = _build_api_cors_headers(raw_request)
+
+        async def send_with_cors(message):
+            if message.get("type") == "http.response.start":
+                MutableHeaders(scope=message).update(cors_headers)
+            await send(message)
+
+        await self.app(scope, receive, send_with_cors)
+
 
 class Message(BaseModel):
     role: str
@@ -622,41 +665,9 @@ class API:
             self.start_worker()
 
     def _install_api_cors_middleware(self) -> None:
-        @self.app.middleware("http")
-        async def api_cors_middleware(raw_request: Request, call_next):
-            if not _is_api_cors_path(raw_request.url.path):
-                return await call_next(raw_request)
-
-            origin = raw_request.headers.get("origin")
-            if not origin:
-                return await call_next(raw_request)
-
-            is_preflight = (
-                raw_request.method.upper() == "OPTIONS"
-                and raw_request.headers.get("access-control-request-method")
-            )
-            if is_preflight:
-                requested_method = str(
-                    raw_request.headers.get("access-control-request-method") or ""
-                ).upper()
-                headers = _build_api_cors_headers(raw_request, preflight=True)
-                if requested_method not in API_CORS_ALLOWED_METHODS:
-                    return Response(
-                        "Disallowed CORS method",
-                        status_code=400,
-                        media_type="text/plain",
-                        headers=headers,
-                    )
-                return Response(
-                    "OK",
-                    status_code=200,
-                    media_type="text/plain",
-                    headers=headers,
-                )
-
-            response = await call_next(raw_request)
-            response.headers.update(_build_api_cors_headers(raw_request))
-            return response
+        # A plain ASGI middleware: Starlette's @app.middleware("http") wrapper hides client
+        # disconnects from the endpoints, so a cancelled request would never be noticed.
+        self.app.add_middleware(_ApiCorsMiddleware)
 
     def _build_runtime_drivers_map(self) -> dict[DriverProvider, BaseDriver]:
         if isinstance(self.driver, ParallelDriversManager):
@@ -1740,7 +1751,9 @@ class API:
                 usage: dict | None = None
                 
                 while True:
-                    chunk_str = await response_queue.get()
+                    chunk_str = await self._next_chunk_or_disconnect(response_queue, abort_event, raw_request)
+                    if chunk_str is _CLIENT_GONE:
+                        return Response(status_code=499)  # Nobody is listening any more.
                     if chunk_str is None:
                         break
 
@@ -1894,7 +1907,9 @@ class API:
             usage: dict | None = None
 
             while True:
-                chunk_str = await response_queue.get()
+                chunk_str = await self._next_chunk_or_disconnect(response_queue, abort_event, raw_request)
+                if chunk_str is _CLIENT_GONE:
+                    return Response(status_code=499)  # Nobody is listening any more.
                 if chunk_str is None:
                     break
 
@@ -1954,6 +1969,31 @@ class API:
                 "usage": _normalize_usage_object(usage),
             }
 
+    async def _abort_for_client_disconnect(self, abort_event: asyncio.Event) -> None:
+        """The client hung up (e.g. SillyTavern's Stop): drop it from the queue or stop it."""
+        Logger.warning("Client disconnected, aborting request...")
+        abort_event.set()
+        self._notify_queue_state_changed()
+        removed = await self._remove_queued_request_by_abort_event(abort_event)
+        if not removed:
+            self._request_abort_for_abort_event(abort_event)
+
+    async def _next_chunk_or_disconnect(
+        self,
+        response_queue: asyncio.Queue,
+        abort_event: asyncio.Event,
+        raw_request: Request,
+    ) -> Any:
+        """Next response chunk for a non-streaming request, or _CLIENT_GONE once the client hung up."""
+        while True:
+            if await raw_request.is_disconnected():
+                await self._abort_for_client_disconnect(abort_event)
+                return _CLIENT_GONE
+            try:
+                return await asyncio.wait_for(response_queue.get(), timeout=0.5)
+            except asyncio.TimeoutError:
+                continue
+
     async def stream_generator(
         self,
         response_queue: asyncio.Queue,
@@ -1965,12 +2005,7 @@ class API:
             while True:
                 # Check if client disconnected
                 if await raw_request.is_disconnected():
-                    Logger.warning("Client disconnected, aborting request...")
-                    abort_event.set()
-                    self._notify_queue_state_changed()
-                    removed = await self._remove_queued_request_by_abort_event(abort_event)
-                    if not removed:
-                        self._request_abort_for_abort_event(abort_event)
+                    await self._abort_for_client_disconnect(abort_event)
                     break
                 
                 try:
@@ -2066,6 +2101,8 @@ class API:
             f"Processing queued {request_type} request for {slot.label}..."
             + (f" (loadout: {loadout_name})" if loadout_name else "")
         )
+        cancel_logged = False
+        begun = False
         try:
             if not bool(getattr(driver, "is_running", False)):
                 await response_queue.put(
@@ -2083,6 +2120,10 @@ class API:
             self.current_abort_events_by_slot_id[slot_id] = abort_event
             self._sync_current_entry_aliases()
             self._notify_queue_state_changed()
+            begin_request = getattr(driver, "begin_request", None)
+            if callable(begin_request):
+                begin_request(abort_event)
+            begun = True
 
             try:
                 ece_reauth_enabled = bool(driver.ece_reauth_enabled())
@@ -2223,6 +2264,11 @@ class API:
                     if not abort_event.is_set():
                         restart = getattr(driver, "ece_restart_with_rotation", None)
                         if callable(restart):
+                            # A browser restart must run to the end even if the request is
+                            # cancelled meanwhile; the next attempt is cancellable again.
+                            pause = getattr(driver, "end_request", None)
+                            if callable(pause):
+                                pause()
                             try:
                                 restarted = bool(
                                     await restart(
@@ -2235,6 +2281,10 @@ class API:
                                 )
                             except Exception:
                                 restarted = False
+                            finally:
+                                resume = getattr(driver, "begin_request", None)
+                                if callable(resume):
+                                    resume(abort_event)
                     if restarted:
                         continue
 
@@ -2249,10 +2299,43 @@ class API:
 
                 break
 
+        except RequestCancelled:
+            # Raised by the driver's next UI step once the request was cancelled (client hung up).
+            cancel_logged = True
+            if bool(getattr(driver, "request_was_sent", lambda: False)()):
+                Logger.info(f"{slot.label}: request cancelled; nothing more was sent.")
+            else:
+                Logger.info(f"{slot.label}: request cancelled before it was sent. Nothing was sent.")
         except Exception as e:
             Logger.error(f"Error in {slot.label} worker: {e}")
             await response_queue.put(_make_openai_error_sse_chunk(str(e)))
         finally:
+            sent = bool(getattr(driver, "request_was_sent", lambda: False)())
+            if begun and abort_event.is_set() and not cancel_logged:
+                if sent:
+                    Logger.info(f"{slot.label}: request cancelled after it was sent.")
+                else:
+                    Logger.info(f"{slot.label}: request cancelled before it was sent. Nothing was sent.")
+            try:
+                settle = getattr(driver, "settle_after_request", None)
+                if callable(settle):
+                    await settle()  # A site Stop must not hit the next request.
+            except (Exception, RequestCancelled):
+                pass
+            if begun and abort_event.is_set() and not sent:
+                # Cancelled while being prepared: the next request must not build on it.
+                try:
+                    forget = getattr(driver, "forget_request_context", None)
+                    if callable(forget):
+                        forget()
+                    reset = getattr(driver, "reset_after_cancelled_request", None)
+                    if callable(reset):
+                        await reset()
+                except (Exception, RequestCancelled) as e:
+                    Logger.debug(f"{slot.label}: could not reset after the cancelled request: {e}")
+            end_request = getattr(driver, "end_request", None)
+            if callable(end_request):
+                end_request()
             self.current_entries_by_slot_id.pop(slot_id, None)
             self.current_abort_events_by_slot_id.pop(slot_id, None)
             self._sync_current_entry_aliases()

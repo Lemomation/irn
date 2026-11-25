@@ -17,7 +17,7 @@ from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 import httpx
 from dotenv import load_dotenv
 
-from drivers.base_driver import BaseDriver
+from drivers.base_driver import BaseDriver, RequestCancelled
 from drivers.providers import DriverProvider
 from drivers.shared_utils import (
     build_prompt_text_file_payload,
@@ -847,6 +847,7 @@ class AIStudioDriver(BaseDriver):
             if timeout_ms <= 0 or time.time() >= deadline:
                 return None
 
+            self._raise_if_request_cancelled()
             await asyncio.sleep(max(0.05, float(poll_interval_s)))
 
     async def _find_first_visible_within(
@@ -2247,6 +2248,7 @@ class AIStudioDriver(BaseDriver):
         return bool(applied)
 
     async def _ui_settle_pause(self, delay_s: float = 0.22) -> None:
+        self._raise_if_request_cancelled()
         delay = max(0.0, float(delay_s))
         if self._humanize_mouse_movements_enabled() and delay > 0.0:
             delay += random.uniform(0.02, 0.12)
@@ -3293,6 +3295,7 @@ class AIStudioDriver(BaseDriver):
         _ = source
         if not self.page:
             return
+        self._raise_if_request_cancelled()
         await self._navigate_to_start_url(self.START_URL)
         await self._wait_for_chat_ready(timeout_ms=60000)
         await self._ensure_temporary_chat_url(timeout_ms=60000)
@@ -3367,6 +3370,10 @@ class AIStudioDriver(BaseDriver):
         except asyncio.CancelledError:
             self._clear_preflight_chat_state()
             raise
+        except RequestCancelled:
+            # The next request was cancelled while this ran; that request stops on its own,
+            # and this background task must not carry its cancellation into a later one.
+            self._clear_preflight_chat_state()
         except Exception as e:
             self._clear_preflight_chat_state()
             Logger.warning(f"Google AI Studio Preflight: failed to prepare next chat session: {e}")
@@ -3464,6 +3471,7 @@ class AIStudioDriver(BaseDriver):
 
     async def upload_file(self, file_spec: Any) -> None:
         """Upload media through AI Studio's picker, including acknowledgement handling."""
+        self._check_before_new_input(upload=True)
         if not self.page:
             return
         return await self._upload_file_with_ack(file_spec)
@@ -4115,6 +4123,7 @@ class AIStudioDriver(BaseDriver):
 
     async def enter_message(self, message: str) -> None:
         """Populate the prompt composer without relying on paste shortcuts."""
+        self._check_before_new_input()
         if not self.page:
             return
 
@@ -4331,6 +4340,13 @@ class AIStudioDriver(BaseDriver):
                 return None
             await asyncio.sleep(0.1)
 
+    async def _stop_generation_on_site(self) -> bool:
+        return await self._click_stop_generation()
+
+    def forget_request_context(self) -> None:
+        super().forget_request_context()
+        self._clear_preflight_chat_state()  # A cancelled request may have used it half-way.
+
     async def _click_stop_generation(self) -> bool:
         """Best-effort click AI Studio's Stop button for the active response."""
         button = await self._find_stop_generation_button(timeout_ms=1200)
@@ -4390,6 +4406,7 @@ class AIStudioDriver(BaseDriver):
         last_state = "not found"
 
         while True:
+            self._raise_if_request_cancelled()
             button = await self._find_send_button(timeout_ms=1000)
             if button is None:
                 last_state = "not found"
@@ -4417,6 +4434,7 @@ class AIStudioDriver(BaseDriver):
         last_error: Exception | None = None
         previous_composer_text = await self._read_prompt_composer_text(timeout_ms=0)
         previous_prompt_had_media = await self._prompt_has_attached_media(timeout_ms=0)
+        self._mark_request_sending()
         for attempt in range(1, self.SEND_CLICK_MAX_ATTEMPTS + 1):
             if completion_started is not None and completion_started.is_set():
                 return
@@ -5247,6 +5265,7 @@ class AIStudioDriver(BaseDriver):
                 continue
 
             try:
+                self._mark_request_sending()
                 await self._click_locator(button.first, timeout=3000)
                 return True
             except Exception:

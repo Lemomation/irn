@@ -532,6 +532,8 @@ class QwenLMDriver(BaseDriver):
 
     def request_abort(self) -> None:
         super().request_abort()
+        if not self.request_was_sent():
+            return  # Nothing reached the site yet; preparation stops on its own.
 
         try:
             loop = asyncio.get_running_loop()
@@ -2174,6 +2176,7 @@ class QwenLMDriver(BaseDriver):
         return False
 
     async def click_new_chat(self, source: str = "auto") -> None:
+        self._raise_if_request_cancelled()
         if not self.page:
             return
 
@@ -3321,6 +3324,7 @@ class QwenLMDriver(BaseDriver):
         await self._upload_file(file_spec)
 
     async def _upload_file(self, file_spec: Any) -> None:
+        self._check_before_new_input(upload=True)
         if not self.page:
             return
 
@@ -3543,6 +3547,7 @@ class QwenLMDriver(BaseDriver):
         await self._send_message(timeout=timeout)
 
     async def _enter_message(self, message: str) -> None:
+        self._check_before_new_input()
         if not self.page:
             return
 
@@ -3572,6 +3577,7 @@ class QwenLMDriver(BaseDriver):
         last_error: Optional[Exception] = None
 
         while True:
+            self._raise_if_request_cancelled()
             btn = self.page.locator(self.SEND_BUTTON_SELECTOR)
             try:
                 if await btn.count() > 0 and await btn.first.is_visible():
@@ -3597,6 +3603,7 @@ class QwenLMDriver(BaseDriver):
                         is_enabled = True
 
                     if is_enabled:
+                        self._mark_request_sending()
                         await btn.first.click(timeout=3000)
                         return
             except Exception as e:
@@ -3635,6 +3642,7 @@ class QwenLMDriver(BaseDriver):
             try:
                 if not await candidate.is_visible():
                     continue
+                self._mark_request_sending()
                 await candidate.click(timeout=3000)
                 return True
             except Exception:
