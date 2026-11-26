@@ -17,7 +17,7 @@ from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 import httpx
 from dotenv import load_dotenv
 
-from drivers.base_driver import BaseDriver
+from drivers.base_driver import BaseDriver, RequestCancelled
 from drivers.providers import DriverProvider
 from drivers.shared_utils import (
     build_prompt_text_file_payload,
@@ -547,6 +547,7 @@ class AIStudioDriver(BaseDriver):
         self._safety_filters_initialized = False
         self._system_instructions_storage_reset_done = False
         self._preflight_task: Optional[asyncio.Task] = None
+        self._preflight_after_cancel: tuple[Dict[str, Any], str] | None = None
         self._preflight_ready = False
         self._preflight_state: Optional[Dict[str, Any]] = None
         self._preflight_system_prompt_text = ""
@@ -847,6 +848,7 @@ class AIStudioDriver(BaseDriver):
             if timeout_ms <= 0 or time.time() >= deadline:
                 return None
 
+            self._raise_if_request_cancelled()
             await asyncio.sleep(max(0.05, float(poll_interval_s)))
 
     async def _find_first_visible_within(
@@ -2247,6 +2249,7 @@ class AIStudioDriver(BaseDriver):
         return bool(applied)
 
     async def _ui_settle_pause(self, delay_s: float = 0.22) -> None:
+        self._raise_if_request_cancelled()
         delay = max(0.0, float(delay_s))
         if self._humanize_mouse_movements_enabled() and delay > 0.0:
             delay += random.uniform(0.02, 0.12)
@@ -3293,6 +3296,7 @@ class AIStudioDriver(BaseDriver):
         _ = source
         if not self.page:
             return
+        self._raise_if_request_cancelled()
         await self._navigate_to_start_url(self.START_URL)
         await self._wait_for_chat_ready(timeout_ms=60000)
         await self._ensure_temporary_chat_url(timeout_ms=60000)
@@ -3367,6 +3371,10 @@ class AIStudioDriver(BaseDriver):
         except asyncio.CancelledError:
             self._clear_preflight_chat_state()
             raise
+        except RequestCancelled:
+            # The next request was cancelled while this ran; that request stops on its own,
+            # and this background task must not carry its cancellation into a later one.
+            self._clear_preflight_chat_state()
         except Exception as e:
             self._clear_preflight_chat_state()
             Logger.warning(f"Google AI Studio Preflight: failed to prepare next chat session: {e}")
@@ -3464,6 +3472,7 @@ class AIStudioDriver(BaseDriver):
 
     async def upload_file(self, file_spec: Any) -> None:
         """Upload media through AI Studio's picker, including acknowledgement handling."""
+        self._check_before_new_input(upload=True)
         if not self.page:
             return
         return await self._upload_file_with_ack(file_spec)
@@ -4115,6 +4124,7 @@ class AIStudioDriver(BaseDriver):
 
     async def enter_message(self, message: str) -> None:
         """Populate the prompt composer without relying on paste shortcuts."""
+        self._check_before_new_input()
         if not self.page:
             return
 
@@ -4331,6 +4341,22 @@ class AIStudioDriver(BaseDriver):
                 return None
             await asyncio.sleep(0.1)
 
+    async def _stop_generation_on_site(self) -> bool:
+        return await self._click_stop_generation()
+
+    def forget_request_context(self) -> None:
+        super().forget_request_context()
+        self._clear_preflight_chat_state()  # A cancelled request may have used it half-way.
+
+    async def reset_after_cancelled_request(self, *, sent: bool = False) -> None:
+        # Prepare the next chat as after a normal reply: it also leaves the cancelled one.
+        pending, self._preflight_after_cancel = self._preflight_after_cancel, None
+        if pending is not None and self._preflight_next_chat_enabled():
+            self._clear_preflight_chat_state()
+            self._schedule_preflight_next_chat(*pending)
+            return
+        await super().reset_after_cancelled_request(sent=sent)
+
     async def _click_stop_generation(self) -> bool:
         """Best-effort click AI Studio's Stop button for the active response."""
         button = await self._find_stop_generation_button(timeout_ms=1200)
@@ -4390,6 +4416,7 @@ class AIStudioDriver(BaseDriver):
         last_state = "not found"
 
         while True:
+            self._raise_if_request_cancelled()
             button = await self._find_send_button(timeout_ms=1000)
             if button is None:
                 last_state = "not found"
@@ -4452,12 +4479,15 @@ class AIStudioDriver(BaseDriver):
             clicked = True
             try:
                 await self._refocus_composer_before_send()
+                # Counts as sent from here (a cancel until now stops before the click).
+                self._mark_request_sending()
                 await self._click_locator(button, timeout=3000)
                 await self._ui_settle_pause(0.25)
             except Exception as e:
                 last_error = e
                 try:
                     await self._refocus_composer_before_send()
+                    self._mark_request_sending()
                     await self._click_locator(button, timeout=3000, force=True)
                     await self._ui_settle_pause(0.25)
                 except Exception as force_error:
@@ -4480,6 +4510,7 @@ class AIStudioDriver(BaseDriver):
             # Banners or promos can sit on top of the Run button, so fall back to the keyboard
             # shortcut, which only needs composer focus. We only get here while the prompt is
             # still pending, so this does not double-submit.
+            self._mark_request_sending()
             if await self._submit_prompt_via_keyboard() and await self._wait_for_send_click_observed(
                 previous_composer_text=previous_composer_text,
                 previous_prompt_had_media=previous_prompt_had_media,
@@ -5247,6 +5278,7 @@ class AIStudioDriver(BaseDriver):
                 continue
 
             try:
+                self._mark_request_sending()
                 await self._click_locator(button.first, timeout=3000)
                 return True
             except Exception:
@@ -5463,6 +5495,7 @@ class AIStudioDriver(BaseDriver):
         completion_claim_lock = asyncio.Lock()
         completion_claimed = False
         preflight_next_chat = self._preflight_next_chat_enabled()
+        self._preflight_after_cancel = None
         preflight_settings_for_next_chat: Dict[str, Any] | None = None
         preflight_system_prompt_for_next_chat = ""
         current_attempt_meta: Dict[str, Any] = {
@@ -6527,6 +6560,12 @@ class AIStudioDriver(BaseDriver):
                 preflight_next_chat = False
             if not preflight_next_chat:
                 self._clear_preflight_chat_state()
+            if preflight_next_chat:
+                # Used if this request gets cancelled: the next chat is still prepared.
+                self._preflight_after_cancel = (
+                    _build_caars_savior_settings() if caars_enabled else dict(effective_settings),
+                    str(system_prompt_text or ""),
+                )
 
             clean_regeneration = clean_regeneration_requested and not caars_enabled
             clean_regen_state = self._build_clean_regeneration_state(

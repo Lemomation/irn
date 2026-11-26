@@ -2810,6 +2810,9 @@ class MoonshotDriver(BaseDriver):
         lowered = signature.lower()
         return any(token in lowered for token in ("stop", "cancel", "abort", "pause", "square"))
 
+    async def _stop_generation_on_site(self) -> bool:
+        return bool(await self._click_stop_button())
+
     async def _click_stop_button(self):
         try:
             send_button = self.page.locator("div.send-button-container")
@@ -4026,6 +4029,7 @@ class MoonshotDriver(BaseDriver):
         await self._click_with_fallbacks(opener, timeout_ms=1500)
 
     async def click_new_chat(self, source: str = "auto"):
+        self._raise_if_request_cancelled()
         _ = source
         if not self.page:
             return
@@ -4060,6 +4064,7 @@ class MoonshotDriver(BaseDriver):
         await self._send_message(timeout=timeout)
 
     async def _enter_message(self, message: str):
+        self._check_before_new_input()
         await self._dismiss_kimi_sidebar_overlay()
         editor = await self._find_first_visible(
             [
@@ -4138,6 +4143,7 @@ class MoonshotDriver(BaseDriver):
         if timeout and timeout > 0:
             deadline = time.time() + float(timeout)
             while time.time() < deadline:
+                self._raise_if_request_cancelled()
                 class_attr = await send_button.get_attribute("class") or ""
                 if "disabled" not in class_attr.split():
                     break
@@ -4148,6 +4154,7 @@ class MoonshotDriver(BaseDriver):
             Logger.warning("Moonshot: send button is disabled. Cannot send message.")
             return
 
+        self._mark_request_sending()
         try:
             clicked = await self._click_with_fallbacks(send_button, timeout_ms=3000)
             if not clicked:
@@ -4186,6 +4193,7 @@ class MoonshotDriver(BaseDriver):
             if ("disabled" in class_attr.split()) or (aria_disabled == "true"):
                 return False
 
+            self._mark_request_sending()
             try:
                 return await self._click_with_fallbacks(candidate, timeout_ms=2000)
             except Exception:
@@ -4261,6 +4269,7 @@ class MoonshotDriver(BaseDriver):
             return False
 
     async def _upload_file(self, file_spec: Any) -> bool:
+        self._check_before_new_input(upload=True)
         await self._dismiss_kimi_sidebar_overlay()
         if await self._upload_file_direct_input(file_spec):
             return True

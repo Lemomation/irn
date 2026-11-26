@@ -535,6 +535,8 @@ class MimoDriver(BaseDriver):
 
     def request_abort(self) -> None:
         super().request_abort()
+        if not self.request_was_sent():
+            return  # Nothing reached the site yet; preparation stops on its own.
         try:
             loop = asyncio.get_running_loop()
         except RuntimeError:
@@ -1845,6 +1847,7 @@ class MimoDriver(BaseDriver):
         return None
 
     async def click_new_chat(self, source: str = "auto") -> None:
+        self._raise_if_request_cancelled()
         _ = source
         if not self.page:
             return
@@ -1865,6 +1868,7 @@ class MimoDriver(BaseDriver):
         await self._upload_file(file_spec)
 
     async def _upload_file(self, file_spec: Any) -> bool:
+        self._check_before_new_input(upload=True)
         if not self.page:
             return False
 
@@ -1965,6 +1969,7 @@ class MimoDriver(BaseDriver):
             await asyncio.sleep(0.2)
 
     async def enter_message(self, message: str) -> None:
+        self._check_before_new_input()
         if not self.page:
             return
         await self._dismiss_blocking_popups()
@@ -1993,6 +1998,7 @@ class MimoDriver(BaseDriver):
         last_error: Exception | None = None
 
         while True:
+            self._raise_if_request_cancelled()
             await self._dismiss_blocking_popups()
             button = self.page.locator(self.SEND_BUTTON_SELECTOR)
             try:
@@ -2011,6 +2017,7 @@ class MimoDriver(BaseDriver):
                     if disabled_attr is not None or aria_disabled == "true" or not is_enabled:
                         last_error = RuntimeError("Send button is disabled.")
                         continue
+                    self._mark_request_sending()
                     await candidate.click(timeout=3000)
                     return True
                 except Exception as exc:
@@ -2080,6 +2087,7 @@ class MimoDriver(BaseDriver):
             try:
                 if not await candidate.is_visible():
                     continue
+                self._mark_request_sending()
                 await candidate.click(timeout=3000)
                 return True
             except Exception:

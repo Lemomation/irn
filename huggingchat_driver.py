@@ -8,7 +8,7 @@ import time
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Union
 
-from drivers.base_driver import BaseDriver
+from drivers.base_driver import BaseDriver, RequestCancelled
 from drivers.providers import DriverProvider
 from drivers.shared_utils import (
     COMMON_REQUEST_MACRO_ACTIONS,
@@ -380,8 +380,9 @@ class HuggingChatDriver(BaseDriver):
                 await self._click_stop_button(timeout_s=8.0)
                 return
             await self._open_new_chat_after_aborted_wait()
-        except Exception as exc:
-            Logger.debug(f"HuggingChat: abort UI action failed: {exc}")
+        except (Exception, RequestCancelled) as exc:
+            # (A cleanup task: the cancel checks in shared steps are meant for the request.)
+            Logger.debug(f"HuggingChat: abort UI action failed: {exc!r}")
 
     async def _open_new_chat_after_aborted_wait(self) -> bool:
         if not self.page:
@@ -1499,6 +1500,7 @@ class HuggingChatDriver(BaseDriver):
             pass
 
     async def click_new_chat(self, source: str = "auto") -> None:
+        self._raise_if_request_cancelled()
         if not self.page:
             return
         try:
@@ -1638,6 +1640,7 @@ class HuggingChatDriver(BaseDriver):
         await self._upload_file(file_spec)
 
     async def _upload_file(self, file_spec: Any) -> bool:
+        self._check_before_new_input(upload=True)
         if not self.page:
             return False
 
@@ -1701,6 +1704,7 @@ class HuggingChatDriver(BaseDriver):
             return False
 
     async def enter_message(self, message: str) -> None:
+        self._check_before_new_input()
         if not self.page:
             return
         textarea = self.page.locator(self.CHAT_TEXTAREA_SELECTOR)
@@ -1724,12 +1728,14 @@ class HuggingChatDriver(BaseDriver):
         start = time.monotonic()
         last_error: Exception | None = None
         while True:
+            self._raise_if_request_cancelled()
             btn = self.page.locator(self.SEND_BUTTON_SELECTOR)
             try:
                 if await btn.count() > 0 and await btn.first.is_visible():
                     disabled = await btn.first.get_attribute("disabled")
                     aria_disabled = str(await btn.first.get_attribute("aria-disabled") or "").strip().lower()
                     if disabled is None and aria_disabled != "true" and await btn.first.is_enabled():
+                        self._mark_request_sending()
                         clicked = await self._click_visible_area(
                             self.SEND_BUTTON_SELECTOR,
                             timeout_ms=3000,
@@ -1764,6 +1770,7 @@ class HuggingChatDriver(BaseDriver):
             button = buttons.nth(idx)
             try:
                 if await button.is_visible():
+                    self._mark_request_sending()
                     clicked = await self._click_visible_area(
                         self.RETRY_BUTTON_SELECTOR,
                         timeout_ms=1000,

@@ -2069,6 +2069,7 @@ class GLMDriver(BaseDriver):
             await asyncio.sleep(0.1)
 
     async def click_new_chat(self, source: str = "auto") -> None:
+        self._raise_if_request_cancelled()
         if not self.page:
             return
 
@@ -2968,6 +2969,7 @@ class GLMDriver(BaseDriver):
         await self._upload_file(file_spec)
 
     async def _upload_file(self, file_spec: Any) -> None:
+        self._check_before_new_input(upload=True)
         if not self.page:
             return
 
@@ -2983,6 +2985,7 @@ class GLMDriver(BaseDriver):
         await self._enter_message(message)
 
     async def _enter_message(self, message: str) -> None:
+        self._check_before_new_input()
         if not self.page:
             return
 
@@ -3046,6 +3049,9 @@ class GLMDriver(BaseDriver):
             await asyncio.sleep(0.15)
 
         return False
+
+    async def _stop_generation_on_site(self) -> bool:
+        return await self._click_stop_button()
 
     async def _click_stop_button(self) -> bool:
         if not self.page:
@@ -3275,6 +3281,7 @@ class GLMDriver(BaseDriver):
         if timeout and timeout > 0:
             start = time.time()
             while time.time() - start < timeout:
+                self._raise_if_request_cancelled()
                 try:
                     if not await send_button.first.is_disabled():
                         break
@@ -3303,6 +3310,7 @@ class GLMDriver(BaseDriver):
                 pass
 
         for attempt in range(max_retries):
+            self._mark_request_sending()  # Before each try: a cancel meanwhile stops it.
             clicked = await self._click_glm_control(
                 send_button.first,
                 label="send button",
@@ -3394,6 +3402,7 @@ class GLMDriver(BaseDriver):
                     except Exception:
                         pass
 
+                    self._mark_request_sending()
                     try:
                         await regen.first.click(timeout=self._ui_timeout)
                         return True
