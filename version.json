@@ -1,8 +1,8 @@
 {
-  "version": "2.9.7-rev2",
+  "version": "2.9.7-rev3",
   "aua": true,
   "severity": 3,
   "pu": "none",
   "pufref": "none",
-  "summary": "Added support for Google's new Gemini 4 Neon in Google AI Studio with full thinking level controls (Low, Medium, High, Extra High) and 1M context. Includes fixes to dismiss Google's cookie notice bar and recover short CDP responses."
+  "summary": "Updated /v1/chat/completions to emit model thoughts in OpenAI-compatible reasoning_content fields instead of <think> tags, enabling native collapsible thinking drawers in frontends like SillyTavern. Also stops queued and in-flight requests immediately when a client disconnects—thanks to @ciroprogamer (PR #7) for the cancellation fix."
 }
