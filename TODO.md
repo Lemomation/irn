@@ -1,5 +1,6 @@
 # IntenseRP Next - TODO
 
-1. Add support for newer Qwen models (Qwen 3.8 series)
-2. Deprecate / clean up retired older models from the dropdown list
-3. Update QwenLM driver and docs in general
+1. Maybe research new providers? LM Arena? Perchance?
+2. Either retire or renew Perplexity and Huggingface chat
+3. Update how thinking is sent (replace the old <think> tags with modern standard)
+4. Create survey
