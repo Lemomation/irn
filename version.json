@@ -4,5 +4,5 @@
   "severity": 3,
   "pu": "none",
   "pufref": "none",
-  "summary": "Updated /v1/chat/completions to emit model thoughts in OpenAI-compatible reasoning_content fields instead of <think> tags, enabling native collapsible thinking drawers in frontends like SillyTavern. Also stops queued and in-flight requests immediately when a client disconnects—thanks to @ciroprogamer (PR #7) for the cancellation fix."
+  "summary": "Added GLM-5.4 support (retiring GLM-5.2) and switched /v1/chat/completions to emit reasoning_content instead of <think> tags for native thinking drawers. Also introduces Background Mode on Windows/Linux and immediate request cancellation on client disconnect—huge thanks to @ciroprogamer for PR #6 and PR #7!"
 }
