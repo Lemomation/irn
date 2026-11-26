@@ -45,12 +45,19 @@ _CLASSIC_PATTERN = re.compile(r'DATA1: "(.*?)"\s*DATA2: "(.*?)"')
 
 def make_openai_delta_sse(
     model_name: str,
-    content: str,
+    content: str = "",
     *,
+    reasoning_content: str = "",
     finish_reason: str | None = None,
     chunk_id: str = "chatcmpl-custom",
 ) -> str:
     """Build an OpenAI-compatible chat completion delta SSE chunk."""
+    delta: dict[str, str] = {}
+    if reasoning_content:
+        delta["reasoning_content"] = reasoning_content
+    if content:
+        delta["content"] = content
+
     openai_chunk = {
         "id": chunk_id,
         "object": "chat.completion.chunk",
@@ -59,7 +66,7 @@ def make_openai_delta_sse(
         "choices": [
             {
                 "index": 0,
-                "delta": {"content": content} if content else {},
+                "delta": delta,
                 "finish_reason": finish_reason,
             }
         ],

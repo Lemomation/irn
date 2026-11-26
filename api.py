@@ -177,16 +177,18 @@ def _payload_has_meaningful_content(payload: dict) -> bool:
 
         delta = choice0.get("delta")
         if isinstance(delta, dict):
-            content = delta.get("content")
-            if isinstance(content, str) and content.strip():
-                return True
+            for field in ("content", "reasoning_content"):
+                val = delta.get(field)
+                if isinstance(val, str) and val.strip():
+                    return True
 
         # Non-streaming responses can carry content in 'message'
         message = choice0.get("message")
         if isinstance(message, dict):
-            content = message.get("content")
-            if isinstance(content, str) and content.strip():
-                return True
+            for field in ("content", "reasoning_content"):
+                val = message.get(field)
+                if isinstance(val, str) and val.strip():
+                    return True
     except Exception:
         return False
 
@@ -376,6 +378,170 @@ def _make_text_completion_sse_chunk(parsed: dict, *, default_model: str) -> str 
         ],
     }
     return f"data: {json.dumps(completion_chunk)}\n\n"
+
+
+class _ThinkTagReasoningExtractor:
+    """Split `<think>...</think>` spans in OpenAI delta streams into `reasoning_content`."""
+
+    OPEN_TAG = "<think>"
+    CLOSE_TAG = "</think>"
+
+    def __init__(self, *, default_model: str = "") -> None:
+        self._in_think = False
+        self._pending = ""
+        self._last_model = default_model
+
+    @staticmethod
+    def _trailing_tag_prefix_len(text: str, tag: str) -> int:
+        max_len = min(len(text), len(tag) - 1)
+        for length in range(max_len, 0, -1):
+            if text.endswith(tag[:length]):
+                return length
+        return 0
+
+    def feed(self, text: str) -> tuple[str, str]:
+        """Consume a delta content string and return `(reasoning_out, content_out)`."""
+        if not text:
+            return "", ""
+
+        self._pending += text
+        reasoning_parts: list[str] = []
+        content_parts: list[str] = []
+
+        while self._pending:
+            if not self._in_think:
+                idx = self._pending.find(self.OPEN_TAG)
+                if idx != -1:
+                    if idx > 0:
+                        content_parts.append(self._pending[:idx])
+                    self._pending = self._pending[idx + len(self.OPEN_TAG) :]
+                    self._in_think = True
+                    continue
+
+                hold = self._trailing_tag_prefix_len(self._pending, self.OPEN_TAG)
+                emit_len = len(self._pending) - hold
+                if emit_len > 0:
+                    content_parts.append(self._pending[:emit_len])
+                    self._pending = self._pending[emit_len:]
+                break
+
+            idx = self._pending.find(self.CLOSE_TAG)
+            if idx != -1:
+                if idx > 0:
+                    reasoning_parts.append(self._pending[:idx])
+                self._pending = self._pending[idx + len(self.CLOSE_TAG) :]
+                self._in_think = False
+                continue
+
+            hold = self._trailing_tag_prefix_len(self._pending, self.CLOSE_TAG)
+            emit_len = len(self._pending) - hold
+            if emit_len > 0:
+                reasoning_parts.append(self._pending[:emit_len])
+                self._pending = self._pending[emit_len:]
+            break
+
+        return "".join(reasoning_parts), "".join(content_parts)
+
+    def flush(self) -> tuple[str, str]:
+        """Flush any trailing buffered text at end-of-stream."""
+        if not self._pending:
+            return "", ""
+        leftover = self._pending
+        self._pending = ""
+        if self._in_think:
+            return leftover, ""
+        return "", leftover
+
+    def transform_parsed_chunk(self, parsed: dict) -> dict | None:
+        """Transform a parsed chat.completion.chunk dict, returning `None` if empty."""
+        if "error" in parsed:
+            return parsed
+
+        model = parsed.get("model")
+        if isinstance(model, str) and model:
+            self._last_model = model
+
+        choices = parsed.get("choices")
+        if not isinstance(choices, list) or not choices:
+            return parsed
+
+        choice0 = choices[0]
+        if not isinstance(choice0, dict):
+            return parsed
+
+        delta = choice0.get("delta")
+        finish_reason = choice0.get("finish_reason")
+        if not isinstance(delta, dict):
+            return parsed
+
+        # If a driver already populated reasoning_content directly, preserve it.
+        if isinstance(delta.get("reasoning_content"), str) and delta["reasoning_content"]:
+            return parsed
+
+        raw_content = delta.get("content")
+        if not isinstance(raw_content, str) or not raw_content:
+            if finish_reason is not None:
+                rem_reasoning, rem_content = self.flush()
+                if rem_reasoning or rem_content:
+                    new_delta = dict(delta)
+                    if rem_reasoning:
+                        new_delta["reasoning_content"] = rem_reasoning
+                    if rem_content:
+                        new_delta["content"] = rem_content
+                    new_choice = dict(choice0, delta=new_delta)
+                    return dict(parsed, choices=[new_choice] + choices[1:])
+            return parsed
+
+        reasoning_out, content_out = self.feed(raw_content)
+        if finish_reason is not None:
+            rem_reasoning, rem_content = self.flush()
+            reasoning_out += rem_reasoning
+            content_out += rem_content
+
+        if not reasoning_out and not content_out and finish_reason is None:
+            return None
+
+        new_delta = dict(delta)
+        new_delta.pop("content", None)
+        if reasoning_out:
+            new_delta["reasoning_content"] = reasoning_out
+        if content_out:
+            new_delta["content"] = content_out
+
+        new_choice = dict(choice0, delta=new_delta)
+        return dict(parsed, choices=[new_choice] + choices[1:])
+
+    def transform_sse_chunk(self, parsed: dict) -> str | None:
+        """Transform a parsed chunk dict into an SSE line, or `None` to skip."""
+        transformed = self.transform_parsed_chunk(parsed)
+        if transformed is None:
+            return None
+        return f"data: {json.dumps(transformed)}\n\n"
+
+    def flush_sse(self) -> str | None:
+        """Emit any remaining buffered text as a final SSE chunk before [DONE]."""
+        rem_reasoning, rem_content = self.flush()
+        if not rem_reasoning and not rem_content:
+            return None
+        delta: dict[str, str] = {}
+        if rem_reasoning:
+            delta["reasoning_content"] = rem_reasoning
+        if rem_content:
+            delta["content"] = rem_content
+        chunk = {
+            "id": "chatcmpl-custom",
+            "object": "chat.completion.chunk",
+            "created": int(time.time()),
+            "model": self._last_model,
+            "choices": [
+                {
+                    "index": 0,
+                    "delta": delta,
+                    "finish_reason": None,
+                }
+            ],
+        }
+        return f"data: {json.dumps(chunk)}\n\n"
 
 
 def _normalize_reasoning_effort(value: Any) -> str:
@@ -1723,8 +1889,15 @@ class API:
                 ) from exc
             
             if request.stream:
+                reasoning_extractor = _ThinkTagReasoningExtractor(default_model=request.model)
                 return StreamingResponse(
-                    self.stream_generator(response_queue, abort_event, raw_request),
+                    self.stream_generator(
+                        response_queue,
+                        abort_event,
+                        raw_request,
+                        chunk_transform=reasoning_extractor.transform_sse_chunk,
+                        flush_transform=reasoning_extractor.flush_sse,
+                    ),
                     media_type="text/event-stream",
                     headers={
                         "Cache-Control": "no-cache",
@@ -1734,6 +1907,8 @@ class API:
                 )
             else:
                 # Accumulate response for non-streaming
+                reasoning_extractor = _ThinkTagReasoningExtractor(default_model=request.model)
+                reasoning_parts: list[str] = []
                 content_parts: list[str] = []
                 finish_reason = None
                 error_message: str | None = None
@@ -1757,17 +1932,31 @@ class API:
                     if isinstance(parsed.get("usage"), dict):
                         usage = parsed.get("usage")
 
-                    choices = parsed.get("choices")
+                    transformed = reasoning_extractor.transform_parsed_chunk(parsed)
+                    if not transformed:
+                        continue
+
+                    choices = transformed.get("choices")
                     if isinstance(choices, list) and choices:
                         choice0 = choices[0] if isinstance(choices[0], dict) else {}
                         delta = choice0.get("delta") if isinstance(choice0, dict) else {}
                         if isinstance(delta, dict):
+                            reasoning = delta.get("reasoning_content")
+                            if isinstance(reasoning, str) and reasoning:
+                                reasoning_parts.append(reasoning)
                             content = delta.get("content")
                             if isinstance(content, str) and content:
                                 content_parts.append(content)
                         if isinstance(choice0, dict):
                             finish_reason = choice0.get("finish_reason")
 
+                rem_reasoning, rem_content = reasoning_extractor.flush()
+                if rem_reasoning:
+                    reasoning_parts.append(rem_reasoning)
+                if rem_content:
+                    content_parts.append(rem_content)
+
+                full_reasoning = "".join(reasoning_parts)
                 full_content = "".join(content_parts)
                 
                 if error_message:
@@ -1776,7 +1965,7 @@ class API:
 
                     # Prefer returning partial content for non-streaming clients if we already have
                     # meaningful output (i.e., avoid losing all progress)
-                    if content_parts:
+                    if content_parts or reasoning_parts:
                         if _is_terminal_partial_error(error_message):
                             raise HTTPException(status_code=500, detail=error_message)
                         Logger.warning(
@@ -1786,6 +1975,13 @@ class API:
                     else:
                         raise HTTPException(status_code=500, detail=error_message)
 
+                message_obj: dict[str, Any] = {
+                    "role": "assistant",
+                    "content": full_content,
+                }
+                if full_reasoning:
+                    message_obj["reasoning_content"] = full_reasoning
+
                 return {
                     "id": "chatcmpl-custom",
                     "object": "chat.completion",
@@ -1794,10 +1990,7 @@ class API:
                     "choices": [
                         {
                             "index": 0,
-                            "message": {
-                                "role": "assistant",
-                                "content": full_content
-                            },
+                            "message": message_obj,
                             "finish_reason": finish_reason or "stop"
                         }
                     ],
@@ -1960,6 +2153,7 @@ class API:
         abort_event: asyncio.Event,
         raw_request: Request,
         chunk_transform: Callable[[dict], str | None] | None = None,
+        flush_transform: Callable[[], str | None] | None = None,
     ):
         try:
             while True:
@@ -1977,6 +2171,10 @@ class API:
                     # Use a timeout so we can periodically check for disconnection
                     chunk = await asyncio.wait_for(response_queue.get(), timeout=0.5)
                     if chunk is None:
+                        if flush_transform is not None:
+                            flushed = flush_transform()
+                            if flushed is not None:
+                                yield flushed
                         yield "data: [DONE]\n\n"
                         break
                     if chunk_transform is not None:
